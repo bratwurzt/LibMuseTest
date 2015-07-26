@@ -12,6 +12,8 @@ import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 import android.app.Activity;
 import android.os.Bundle;
@@ -59,30 +61,27 @@ import com.interaxon.libmuse.MuseVersion;
  */
 public class MainActivity extends Activity implements OnClickListener
 {
+  private volatile boolean m_senderRunning = true;
   private final SimpleDateFormat m_dateFormat = new SimpleDateFormat("yyyyMMddhhmm");
   private Muse muse = null;
   private ConnectionListener connectionListener = null;
   private DataListener dataListener = null;
   private boolean dataTransmission = true;
+  private BlockingQueue<MuseDataPacket> m_dataQueue;
   //  private MuseFileWriter fileWriter = null;
   private Handler mHandler = null;
-  protected OSCPortOut m_oscSender;
+  private DataOscSender m_dataOscSender;
 
   public MainActivity()
   {
+    m_dataQueue = new LinkedBlockingQueue<>();
     // Create listeners and pass reference to activity to them
-    WeakReference<Activity> weakActivity = new WeakReference<Activity>(this);
+    WeakReference<Activity> weakActivity = new WeakReference<>(this);
     connectionListener = new ConnectionListener(weakActivity);
     dataListener = new DataListener(weakActivity);
-    try
-    {
-      m_oscSender = new OSCPortOut(InetAddress.getByName("192.168.1.2"), 41672);
-    }
-    catch (SocketException | UnknownHostException e)
-    {
-      Log.e("OscSender", e.toString());
-    }
+    m_dataOscSender = new DataOscSender("192.168.1.2", 41672);
     new Thread(dataListener).start();
+    new Thread(m_dataOscSender).start();
   }
 
   @Override
@@ -98,15 +97,6 @@ public class MainActivity extends Activity implements OnClickListener
     disconnectButton.setOnClickListener(this);
     Button pauseButton = (Button) findViewById(R.id.pause);
     pauseButton.setOnClickListener(this);
-    // // Uncommet to test Muse File Reader
-    //
-    // // file can be big, read it in a separate thread
-    // Thread thread = new Thread(new Runnable() {
-    //     public void run() {
-    //         playMuseFile("testfile.muse");
-    //     }
-    // });
-    // thread.start();
 
     File dir = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
 //    fileWriter = MuseFileFactory.getMuseFileWriter(new File(dir, "new_muse_file" + m_dateFormat.format(new Date()) + ".muse"));
@@ -273,14 +263,32 @@ public class MainActivity extends Activity implements OnClickListener
   private void configureLibrary()
   {
     muse.registerConnectionListener(connectionListener);
-//    muse.registerDataListener(dataListener, MuseDataPacketType.ACCELEROMETER);
     muse.registerDataListener(dataListener, MuseDataPacketType.EEG);
-    muse.registerDataListener(dataListener, MuseDataPacketType.ARTIFACTS);
     muse.registerDataListener(dataListener, MuseDataPacketType.DROPPED_EEG);
     muse.registerDataListener(dataListener, MuseDataPacketType.QUANTIZATION);
+    muse.registerDataListener(dataListener, MuseDataPacketType.ACCELEROMETER);
+    muse.registerDataListener(dataListener, MuseDataPacketType.DROPPED_ACCELEROMETER);
+    muse.registerDataListener(dataListener, MuseDataPacketType.ARTIFACTS);
     muse.registerDataListener(dataListener, MuseDataPacketType.DRL_REF);
     muse.registerDataListener(dataListener, MuseDataPacketType.HORSESHOE);
     muse.registerDataListener(dataListener, MuseDataPacketType.BATTERY);
+    muse.registerDataListener(dataListener, MuseDataPacketType.ALPHA_RELATIVE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.BETA_RELATIVE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.DELTA_RELATIVE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.THETA_RELATIVE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.GAMMA_RELATIVE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.ALPHA_ABSOLUTE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.BETA_ABSOLUTE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.DELTA_ABSOLUTE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.THETA_ABSOLUTE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.GAMMA_ABSOLUTE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.ALPHA_SCORE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.BETA_SCORE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.DELTA_SCORE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.THETA_SCORE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.GAMMA_SCORE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.MELLOW);
+    muse.registerDataListener(dataListener, MuseDataPacketType.CONCENTRATION);
     muse.setPreset(MusePreset.PRESET_14);
     muse.enableDataTransmission(dataTransmission);
   }
@@ -360,6 +368,141 @@ public class MainActivity extends Activity implements OnClickListener
     }
   }
 
+  class DataOscSender implements Runnable
+  {
+    protected OSCPortOut m_oscSender;
+
+    public DataOscSender(String ipAddress, int port)
+    {
+      try
+      {
+        m_oscSender = new OSCPortOut(InetAddress.getByName(ipAddress), port);
+      }
+      catch (SocketException | UnknownHostException e)
+      {
+        Log.e("OscSender", e.toString());
+      }
+    }
+
+    @Override
+    public void run()
+    {
+      while (m_senderRunning)
+      {
+        try
+        {
+          MuseDataPacket p = m_dataQueue.take();
+          switch (p.getPacketType())
+          {
+            case EEG:
+              m_oscSender.send(new OSCMessage("/muse/eeg", getFloats(p)));
+              break;
+            case QUANTIZATION:
+              m_oscSender.send(new OSCMessage("/muse/eeg/quantization", getFloats(p)));
+              break;
+            case DROPPED_EEG:
+              int droppedEeg = (int) p.getValues().get(0).doubleValue();
+              m_oscSender.send(new OSCMessage("/muse/eeg/dropped_samples", Collections.singleton(droppedEeg)));
+              break;
+            case ACCELEROMETER:
+              m_oscSender.send(new OSCMessage("/muse/acc", getFloats(p)));
+              break;
+            case DROPPED_ACCELEROMETER:
+              int droppedAcc = (int) p.getValues().get(0).doubleValue();
+              m_oscSender.send(new OSCMessage("/muse/acc/dropped_samples", Collections.singleton(droppedAcc)));
+              break;
+            case DRL_REF:
+              m_oscSender.send(new OSCMessage("/muse/drlref", getFloats(p)));
+              break;
+            case HORSESHOE:
+              m_oscSender.send(new OSCMessage("/muse/elements/horseshoe", getFloats(p)));
+              break;
+            case ARTIFACTS:
+              m_oscSender.send(new OSCMessage("/muse/drlref", Collections.singleton(1)));
+              break;
+            case ALPHA_RELATIVE:
+              m_oscSender.send(new OSCMessage("/muse/elements/alpha_relative", getFloats(p)));
+              break;
+            case BETA_RELATIVE:
+              m_oscSender.send(new OSCMessage("/muse/elements/beta_relative", getFloats(p)));
+              break;
+            case DELTA_RELATIVE:
+              m_oscSender.send(new OSCMessage("/muse/elements/delta_relative", getFloats(p)));
+              break;
+            case THETA_RELATIVE:
+              m_oscSender.send(new OSCMessage("/muse/elements/theta_relative", getFloats(p)));
+              break;
+            case GAMMA_RELATIVE:
+              m_oscSender.send(new OSCMessage("/muse/elements/gamma_relative", getFloats(p)));
+              break;
+            case ALPHA_ABSOLUTE:
+              m_oscSender.send(new OSCMessage("/muse/elements/alpha_absolute", getFloats(p)));
+              break;
+            case BETA_ABSOLUTE:
+              m_oscSender.send(new OSCMessage("/muse/elements/beta_absolute", getFloats(p)));
+              break;
+            case DELTA_ABSOLUTE:
+              m_oscSender.send(new OSCMessage("/muse/elements/delta_absolute", getFloats(p)));
+              break;
+            case THETA_ABSOLUTE:
+              m_oscSender.send(new OSCMessage("/muse/elements/theta_absolute", getFloats(p)));
+              break;
+            case GAMMA_ABSOLUTE:
+              m_oscSender.send(new OSCMessage("/muse/elements/gamma_absolute", getFloats(p)));
+              break;
+            case ALPHA_SCORE:
+              m_oscSender.send(new OSCMessage("/muse/elements/alpha_session_score", getFloats(p)));
+              break;
+            case BETA_SCORE:
+              m_oscSender.send(new OSCMessage("/muse/elements/beta_session_score", getFloats(p)));
+              break;
+            case DELTA_SCORE:
+              m_oscSender.send(new OSCMessage("/muse/elements/delta_session_score", getFloats(p)));
+              break;
+            case THETA_SCORE:
+              m_oscSender.send(new OSCMessage("/muse/elements/theta_session_score", getFloats(p)));
+              break;
+            case GAMMA_SCORE:
+              m_oscSender.send(new OSCMessage("/muse/elements/gamma_session_score", getFloats(p)));
+              break;
+            case MELLOW:
+              m_oscSender.send(new OSCMessage("/muse/elements/experimental/mellow", getFloats(p)));
+              break;
+            case CONCENTRATION:
+              m_oscSender.send(new OSCMessage("/muse/elements/experimental/concentration", getFloats(p)));
+              break;
+            case BATTERY:
+              ArrayList<Object> returnList = new ArrayList<>();
+              returnList.add((int) (p.getValues().get(0) * 100));
+              returnList.add((int) (double) p.getValues().get(1));
+              returnList.add((int) (double) p.getValues().get(1));
+              returnList.add((int) (double) p.getValues().get(2));
+              m_oscSender.send(new OSCMessage("/muse/batt", returnList));
+              break;
+
+            default:
+              break;
+          }
+        }
+        catch (InterruptedException | IOException e)
+        {
+          Log.e("Muse Headband", e.toString());
+        }
+      }
+    }
+
+    private ArrayList<Object> getFloats(MuseDataPacket packet)
+    {
+      ArrayList<Object> returnList = new ArrayList<>();
+
+      for (double value : packet.getValues())
+      {
+        returnList.add((float) value);
+      }
+      return returnList;
+    }
+  }
+
   /**
    * Data listener will be registered to listen for: Accelerometer, Eeg and Relative Alpha bandpower packets. In all cases we will update UI with new values. We also will log
    * message if Artifact packets contains "blink" flag. DataListener methods will be called from execution thread. If you are implementing "serious" processing algorithms inside
@@ -388,36 +531,9 @@ public class MainActivity extends Activity implements OnClickListener
     {
       try
       {
-        switch (p.getPacketType())
-        {
-          case EEG:
-            m_oscSender.send(new OSCMessage("/muse/eeg", getObjects(p, Float.class)));
-            break;
-          case QUANTIZATION:
-            m_oscSender.send(new OSCMessage("/muse/eeg/quantization", getObjects(p, Float.class)));
-            break;
-          case DROPPED_EEG:
-            int dropped = (int) p.getValues().get(0).doubleValue();
-            m_oscSender.send(new OSCMessage("/muse/eeg/dropped_samples", Collections.singleton(dropped)));
-            break;
-          case DRL_REF:
-            m_oscSender.send(new OSCMessage("/muse/drlref", getObjects(p, Float.class)));
-            break;
-          case HORSESHOE:
-            m_oscSender.send(new OSCMessage("/muse/elements/horseshoe", getObjects(p, Float.class)));
-            break;
-          case ARTIFACTS:
-            m_oscSender.send(new OSCMessage("/muse/drlref", Collections.singleton(1)));
-            break;
-          case BATTERY:
-            m_oscSender.send(new OSCMessage("/muse/batt", getObjects(p, Integer.class)));
-            break;
-
-          default:
-            break;
-        }
+        m_dataQueue.put(p);
       }
-      catch (IOException e)
+      catch (InterruptedException e)
       {
         Log.e("Muse Headband", e.toString());
       }
@@ -426,36 +542,26 @@ public class MainActivity extends Activity implements OnClickListener
     @Override
     public void receiveMuseArtifactPacket(MuseArtifactPacket p)
     {
-      if (p.getHeadbandOn() && (p.getBlink() || p.getJawClench()))
-      {
-        try
-        {
-          if (p.getBlink())
-          {
-            m_oscSender.send(new OSCMessage("/muse/elements/blink", Collections.singleton(1)));
-          }
-          if (p.getJawClench())
-          {
-            m_oscSender.send(new OSCMessage("/muse/elements/jaw_clench", Collections.singleton(1)));
-          }
-        }
-        catch (IOException e)
-        {
-          Log.e("Muse Headband", e.toString());
-        }
-      }
+//      if (p.getHeadbandOn() && (p.getBlink() || p.getJawClench()))
+//      {
+//        try
+//        {
+//          if (p.getBlink())
+//          {
+//            m_oscSender.send(new OSCMessage("/muse/elements/blink", Collections.singleton(1)));
+//          }
+//          if (p.getJawClench())
+//          {
+//            m_oscSender.send(new OSCMessage("/muse/elements/jaw_clench", Collections.singleton(1)));
+//          }
+//        }
+//        catch (IOException e)
+//        {
+//          Log.e("Muse Headband", e.toString());
+//        }
+//      }
     }
 
-    private ArrayList<Object> getObjects(MuseDataPacket packet, Class clazz)
-    {
-      ArrayList<Object> returnList = new ArrayList<>();
-      for (double value : packet.getValues())
-      {
-        Object object = clazz.equals(Float.class) ? (float) value : clazz.equals(Integer.class) ? (int) value : (float) value;
-        returnList.add(object);
-      }
-      return returnList;
-    }
 
     private void updateAlphaRelative(final ArrayList<Double> data)
     {
