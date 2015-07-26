@@ -5,11 +5,13 @@
 package com.interaxon.test.libmuse;
 
 import java.io.File;
+import java.io.IOException;
 import java.lang.ref.WeakReference;
+import java.net.InetAddress;
+import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 
 import android.app.Activity;
 import android.os.Bundle;
@@ -25,7 +27,8 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.Spinner;
 import android.widget.TextView;
-import com.interaxon.libmuse.Accelerometer;
+import com.illposed.osc.OSCMessage;
+import com.illposed.osc.OSCPortOut;
 import com.interaxon.libmuse.AnnotationData;
 import com.interaxon.libmuse.ConnectionState;
 import com.interaxon.libmuse.Eeg;
@@ -41,7 +44,6 @@ import com.interaxon.libmuse.MuseDataPacket;
 import com.interaxon.libmuse.MuseDataPacketType;
 import com.interaxon.libmuse.MuseFileFactory;
 import com.interaxon.libmuse.MuseFileReader;
-import com.interaxon.libmuse.MuseFileWriter;
 import com.interaxon.libmuse.MuseManager;
 import com.interaxon.libmuse.MusePreset;
 import com.interaxon.libmuse.MuseVersion;
@@ -62,202 +64,9 @@ public class MainActivity extends Activity implements OnClickListener
   private ConnectionListener connectionListener = null;
   private DataListener dataListener = null;
   private boolean dataTransmission = true;
-  private MuseFileWriter fileWriter = null;
+  //  private MuseFileWriter fileWriter = null;
   private Handler mHandler = null;
-  /**
-   * Connection listener updates UI with new connection status and logs it.
-   */
-  class ConnectionListener extends MuseConnectionListener
-  {
-    final WeakReference<Activity> activityRef;
-
-    ConnectionListener(final WeakReference<Activity> activityRef)
-    {
-      this.activityRef = activityRef;
-    }
-
-    @Override
-    public void receiveMuseConnectionPacket(MuseConnectionPacket p)
-    {
-      final ConnectionState current = p.getCurrentConnectionState();
-      final String status = p.getPreviousConnectionState().toString() + " -> " + current;
-      final String full = "Muse " + p.getSource().getMacAddress() + " " + status;
-      Log.i("Muse Headband", full);
-      Activity activity = activityRef.get();
-      // UI thread is used here only because we need to update
-      // TextView values. You don't have to use another thread, unless
-      // you want to run disconnect() or connect() from connection packet
-      // handler. In this case creating another thread is required.
-      if (activity != null)
-      {
-        activity.runOnUiThread(new Runnable()
-        {
-          @Override
-          public void run()
-          {
-            TextView statusText = (TextView)findViewById(R.id.con_status);
-            statusText.setText(status);
-            TextView museVersionText = (TextView)findViewById(R.id.version);
-            if (current == ConnectionState.CONNECTED)
-            {
-              MuseVersion museVersion = muse.getMuseVersion();
-              String version = museVersion.getFirmwareType() +
-                  " - " + museVersion.getFirmwareVersion() +
-                  " - " + Integer.toString(
-                  museVersion.getProtocolVersion());
-              museVersionText.setText(version);
-            }
-            else
-            {
-              museVersionText.setText(R.string.undefined);
-            }
-          }
-        });
-      }
-    }
-  }
-
-  /**
-   * Data listener will be registered to listen for: Accelerometer, Eeg and Relative Alpha bandpower packets. In all cases we will update UI with new values. We also will log
-   * message if Artifact packets contains "blink" flag. DataListener methods will be called from execution thread. If you are implementing "serious" processing algorithms inside
-   * those listeners, consider to create another thread.
-   */
-  class DataListener extends MuseDataListener implements Runnable
-  {
-    final WeakReference<Activity> activityRef;
-    private MuseFileWriter fileWriter;
-
-    protected DataListener(final WeakReference<Activity> activityRef)
-    {
-      this.activityRef = activityRef;
-    }
-
-    @Override
-    public void run()
-    {
-      Looper.prepare();
-      mHandler = new Handler();
-      Looper.loop();
-    }
-
-    @Override
-    public void receiveMuseDataPacket(MuseDataPacket p)
-    {
-      switch (p.getPacketType())
-      {
-        case EEG:
-          updateEeg(p.getValues());
-          fileWriter.addDataPacket(1, p);
-          break;
-        case ACCELEROMETER:
-          updateAccelerometer(p.getValues());
-          fileWriter.addDataPacket(1, p);
-          break;
-        case ALPHA_RELATIVE:
-          updateAlphaRelative(p.getValues());
-          fileWriter.addDataPacket(1, p);
-          break;
-        case BATTERY:
-          fileWriter.addDataPacket(1, p);
-          // It's library client responsibility to flush the buffer,
-          // otherwise you may get memory overflow.
-          //if (fileWriter.getBufferedMessagesSize() > 8096)
-          //{
-          //  fileWriter.flush();
-          //}
-          break;
-        default:
-          break;
-      }
-      if (fileWriter.getBufferedMessagesSize() > 16192)
-      {
-        fileWriter.flush();
-      }
-    }
-
-    @Override
-    public void receiveMuseArtifactPacket(MuseArtifactPacket p)
-    {
-      if (p.getHeadbandOn() && p.getBlink())
-      {
-        Log.i("Artifacts", "blink");
-      }
-    }
-
-    private void updateAccelerometer(final ArrayList<Double> data)
-    {
-      Activity activity = activityRef.get();
-      if (activity != null)
-      {
-        activity.runOnUiThread(new Runnable()
-        {
-          @Override
-          public void run()
-          {
-            TextView acc_x = (TextView)findViewById(R.id.acc_x);
-            TextView acc_y = (TextView)findViewById(R.id.acc_y);
-            TextView acc_z = (TextView)findViewById(R.id.acc_z);
-            acc_x.setText(String.format("%6.2f", data.get(Accelerometer.FORWARD_BACKWARD.ordinal())));
-            acc_y.setText(String.format("%6.2f", data.get(Accelerometer.UP_DOWN.ordinal())));
-            acc_z.setText(String.format("%6.2f", data.get(Accelerometer.LEFT_RIGHT.ordinal())));
-          }
-        });
-      }
-    }
-
-    private void updateEeg(final ArrayList<Double> data)
-    {
-      Activity activity = activityRef.get();
-      if (activity != null)
-      {
-        activity.runOnUiThread(new Runnable()
-        {
-          @Override
-          public void run()
-          {
-            TextView tp9 = (TextView)findViewById(R.id.eeg_tp9);
-            TextView fp1 = (TextView)findViewById(R.id.eeg_fp1);
-            TextView fp2 = (TextView)findViewById(R.id.eeg_fp2);
-            TextView tp10 = (TextView)findViewById(R.id.eeg_tp10);
-            String format = String.format("%6.2f", data.get(Eeg.TP9.ordinal()));
-            tp9.setText(format);
-
-            fp1.setText(String.format("%6.2f", data.get(Eeg.FP1.ordinal())));
-            fp2.setText(String.format("%6.2f", data.get(Eeg.FP2.ordinal())));
-            tp10.setText(String.format("%6.2f", data.get(Eeg.TP10.ordinal())));
-          }
-        });
-      }
-    }
-
-    private void updateAlphaRelative(final ArrayList<Double> data)
-    {
-      Activity activity = activityRef.get();
-      if (activity != null)
-      {
-        activity.runOnUiThread(new Runnable()
-        {
-          @Override
-          public void run()
-          {
-            TextView elem1 = (TextView)findViewById(R.id.elem1);
-            TextView elem2 = (TextView)findViewById(R.id.elem2);
-            TextView elem3 = (TextView)findViewById(R.id.elem3);
-            TextView elem4 = (TextView)findViewById(R.id.elem4);
-            elem1.setText(String.format("%6.2f", data.get(Eeg.TP9.ordinal())));
-            elem2.setText(String.format("%6.2f", data.get(Eeg.FP1.ordinal())));
-            elem3.setText(String.format("%6.2f", data.get(Eeg.FP2.ordinal())));
-            elem4.setText(String.format("%6.2f", data.get(Eeg.TP10.ordinal())));
-          }
-        });
-      }
-    }
-
-    public void setFileWriter(MuseFileWriter fileWriter)
-    {
-      this.fileWriter = fileWriter;
-    }
-  }
+  protected OSCPortOut m_oscSender;
 
   public MainActivity()
   {
@@ -265,6 +74,14 @@ public class MainActivity extends Activity implements OnClickListener
     WeakReference<Activity> weakActivity = new WeakReference<Activity>(this);
     connectionListener = new ConnectionListener(weakActivity);
     dataListener = new DataListener(weakActivity);
+    try
+    {
+      m_oscSender = new OSCPortOut(InetAddress.getByName("192.168.1.2"), 41672);
+    }
+    catch (SocketException | UnknownHostException e)
+    {
+      Log.e("OscSender", e.toString());
+    }
     new Thread(dataListener).start();
   }
 
@@ -273,13 +90,13 @@ public class MainActivity extends Activity implements OnClickListener
   {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_main);
-    Button refreshButton = (Button)findViewById(R.id.refresh);
+    Button refreshButton = (Button) findViewById(R.id.refresh);
     refreshButton.setOnClickListener(this);
-    Button connectButton = (Button)findViewById(R.id.connect);
+    Button connectButton = (Button) findViewById(R.id.connect);
     connectButton.setOnClickListener(this);
-    Button disconnectButton = (Button)findViewById(R.id.disconnect);
+    Button disconnectButton = (Button) findViewById(R.id.disconnect);
     disconnectButton.setOnClickListener(this);
-    Button pauseButton = (Button)findViewById(R.id.pause);
+    Button pauseButton = (Button) findViewById(R.id.pause);
     pauseButton.setOnClickListener(this);
     // // Uncommet to test Muse File Reader
     //
@@ -292,10 +109,10 @@ public class MainActivity extends Activity implements OnClickListener
     // thread.start();
 
     File dir = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
-    fileWriter = MuseFileFactory.getMuseFileWriter(new File(dir, "new_muse_file" + m_dateFormat.format(new Date()) + ".muse"));
+//    fileWriter = MuseFileFactory.getMuseFileWriter(new File(dir, "new_muse_file" + m_dateFormat.format(new Date()) + ".muse"));
     Log.i("Muse Headband", "libmuse version=" + LibMuseVersion.SDK_VERSION);
-    fileWriter.addAnnotationString(1, "MainActivity onCreate");
-    dataListener.setFileWriter(fileWriter);
+//    fileWriter.addAnnotationString(1, "MainActivity onCreate");
+//    dataListener.setFileWriter(fileWriter);
   }
 
   @Override
@@ -322,7 +139,7 @@ public class MainActivity extends Activity implements OnClickListener
   @Override
   public void onClick(View v)
   {
-    Spinner musesSpinner = (Spinner)findViewById(R.id.muses_spinner);
+    Spinner musesSpinner = (Spinner) findViewById(R.id.muses_spinner);
     if (v.getId() == R.id.refresh)
     {
       MuseManager.refreshPairedMuses();
@@ -357,8 +174,8 @@ public class MainActivity extends Activity implements OnClickListener
           return;
         }
         configureLibrary();
-        fileWriter.open();
-        fileWriter.addAnnotationString(1, "Connect clicked");
+//        fileWriter.open();
+//        fileWriter.addAnnotationString(1, "Connect clicked");
         /**
          * In most cases libmuse native library takes care about
          * exceptions and recovery mechanism, but native code still
@@ -389,9 +206,9 @@ public class MainActivity extends Activity implements OnClickListener
          * muse.disconnect(false);
          */
         muse.disconnect(true);
-        fileWriter.addAnnotationString(1, "Disconnect clicked");
-        fileWriter.flush();
-        fileWriter.close();
+//        fileWriter.addAnnotationString(1, "Disconnect clicked");
+//        fileWriter.flush();
+//        fileWriter.close();
       }
     }
     else if (v.getId() == R.id.pause)
@@ -456,10 +273,13 @@ public class MainActivity extends Activity implements OnClickListener
   private void configureLibrary()
   {
     muse.registerConnectionListener(connectionListener);
-    muse.registerDataListener(dataListener, MuseDataPacketType.ACCELEROMETER);
+//    muse.registerDataListener(dataListener, MuseDataPacketType.ACCELEROMETER);
     muse.registerDataListener(dataListener, MuseDataPacketType.EEG);
-    muse.registerDataListener(dataListener, MuseDataPacketType.ALPHA_RELATIVE);
     muse.registerDataListener(dataListener, MuseDataPacketType.ARTIFACTS);
+    muse.registerDataListener(dataListener, MuseDataPacketType.DROPPED_EEG);
+    muse.registerDataListener(dataListener, MuseDataPacketType.QUANTIZATION);
+    muse.registerDataListener(dataListener, MuseDataPacketType.DRL_REF);
+    muse.registerDataListener(dataListener, MuseDataPacketType.HORSESHOE);
     muse.registerDataListener(dataListener, MuseDataPacketType.BATTERY);
     muse.setPreset(MusePreset.PRESET_14);
     muse.enableDataTransmission(dataTransmission);
@@ -485,5 +305,184 @@ public class MainActivity extends Activity implements OnClickListener
       return true;
     }
     return super.onOptionsItemSelected(item);
+  }
+
+  /**
+   * Connection listener updates UI with new connection status and logs it.
+   */
+  class ConnectionListener extends MuseConnectionListener
+  {
+    final WeakReference<Activity> activityRef;
+
+    ConnectionListener(final WeakReference<Activity> activityRef)
+    {
+      this.activityRef = activityRef;
+    }
+
+    @Override
+    public void receiveMuseConnectionPacket(MuseConnectionPacket p)
+    {
+      final ConnectionState current = p.getCurrentConnectionState();
+      final String status = p.getPreviousConnectionState().toString() + " -> " + current;
+      final String full = "Muse " + p.getSource().getMacAddress() + " " + status;
+      Log.i("Muse Headband", full);
+      Activity activity = activityRef.get();
+      // UI thread is used here only because we need to update
+      // TextView values. You don't have to use another thread, unless
+      // you want to run disconnect() or connect() from connection packet
+      // handler. In this case creating another thread is required.
+      if (activity != null)
+      {
+        activity.runOnUiThread(new Runnable()
+        {
+          @Override
+          public void run()
+          {
+            TextView statusText = (TextView) findViewById(R.id.con_status);
+            statusText.setText(status);
+            TextView museVersionText = (TextView) findViewById(R.id.version);
+            if (current == ConnectionState.CONNECTED)
+            {
+              MuseVersion museVersion = muse.getMuseVersion();
+              String version = museVersion.getFirmwareType() +
+                  " - " + museVersion.getFirmwareVersion() +
+                  " - " + Integer.toString(
+                  museVersion.getProtocolVersion());
+              museVersionText.setText(version);
+            }
+            else
+            {
+              museVersionText.setText(R.string.undefined);
+            }
+          }
+        });
+      }
+    }
+  }
+
+  /**
+   * Data listener will be registered to listen for: Accelerometer, Eeg and Relative Alpha bandpower packets. In all cases we will update UI with new values. We also will log
+   * message if Artifact packets contains "blink" flag. DataListener methods will be called from execution thread. If you are implementing "serious" processing algorithms inside
+   * those listeners, consider to create another thread.
+   */
+  class DataListener extends MuseDataListener implements Runnable
+  {
+    final WeakReference<Activity> activityRef;
+//    private MuseFileWriter fileWriter;
+
+    protected DataListener(final WeakReference<Activity> activityRef)
+    {
+      this.activityRef = activityRef;
+    }
+
+    @Override
+    public void run()
+    {
+      Looper.prepare();
+      mHandler = new Handler();
+      Looper.loop();
+    }
+
+    @Override
+    public void receiveMuseDataPacket(MuseDataPacket p)
+    {
+      try
+      {
+        switch (p.getPacketType())
+        {
+          case EEG:
+            m_oscSender.send(new OSCMessage("/muse/eeg", getObjects(p, Float.class)));
+            break;
+          case QUANTIZATION:
+            m_oscSender.send(new OSCMessage("/muse/eeg/quantization", getObjects(p, Float.class)));
+            break;
+          case DROPPED_EEG:
+            int dropped = (int) p.getValues().get(0).doubleValue();
+            m_oscSender.send(new OSCMessage("/muse/eeg/dropped_samples", Collections.singleton(dropped)));
+            break;
+          case DRL_REF:
+            m_oscSender.send(new OSCMessage("/muse/drlref", getObjects(p, Float.class)));
+            break;
+          case HORSESHOE:
+            m_oscSender.send(new OSCMessage("/muse/elements/horseshoe", getObjects(p, Float.class)));
+            break;
+          case ARTIFACTS:
+            m_oscSender.send(new OSCMessage("/muse/drlref", Collections.singleton(1)));
+            break;
+          case BATTERY:
+            m_oscSender.send(new OSCMessage("/muse/batt", getObjects(p, Integer.class)));
+            break;
+
+          default:
+            break;
+        }
+      }
+      catch (IOException e)
+      {
+        Log.e("Muse Headband", e.toString());
+      }
+    }
+
+    @Override
+    public void receiveMuseArtifactPacket(MuseArtifactPacket p)
+    {
+      if (p.getHeadbandOn() && (p.getBlink() || p.getJawClench()))
+      {
+        try
+        {
+          if (p.getBlink())
+          {
+            m_oscSender.send(new OSCMessage("/muse/elements/blink", Collections.singleton(1)));
+          }
+          if (p.getJawClench())
+          {
+            m_oscSender.send(new OSCMessage("/muse/elements/jaw_clench", Collections.singleton(1)));
+          }
+        }
+        catch (IOException e)
+        {
+          Log.e("Muse Headband", e.toString());
+        }
+      }
+    }
+
+    private ArrayList<Object> getObjects(MuseDataPacket packet, Class clazz)
+    {
+      ArrayList<Object> returnList = new ArrayList<>();
+      for (double value : packet.getValues())
+      {
+        Object object = clazz.equals(Float.class) ? (float) value : clazz.equals(Integer.class) ? (int) value : (float) value;
+        returnList.add(object);
+      }
+      return returnList;
+    }
+
+    private void updateAlphaRelative(final ArrayList<Double> data)
+    {
+      Activity activity = activityRef.get();
+      if (activity != null)
+      {
+        activity.runOnUiThread(new Runnable()
+        {
+          @Override
+          public void run()
+          {
+            TextView elem1 = (TextView) findViewById(R.id.elem1);
+            TextView elem2 = (TextView) findViewById(R.id.elem2);
+            TextView elem3 = (TextView) findViewById(R.id.elem3);
+            TextView elem4 = (TextView) findViewById(R.id.elem4);
+            elem1.setText(String.format("%6.2f", data.get(Eeg.TP9.ordinal())));
+            elem2.setText(String.format("%6.2f", data.get(Eeg.FP1.ordinal())));
+            elem3.setText(String.format("%6.2f", data.get(Eeg.FP2.ordinal())));
+            elem4.setText(String.format("%6.2f", data.get(Eeg.TP10.ordinal())));
+          }
+        });
+      }
+    }
+
+//    public void setFileWriter(MuseFileWriter fileWriter)
+//    {
+//      this.fileWriter = fileWriter;
+//    }
   }
 }

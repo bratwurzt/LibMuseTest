@@ -24,8 +24,8 @@
       <excludeFolder url="file://$MODULE_DIR$/.idea" />
       <excludeFolder url="file://$MODULE_DIR$/.settings" />
     </content>
-    <orderEntry type="jdk" jdkName="Android API 21 Platform" jdkType="Android SDK" />
-    <orderEntry type="module-library">
+    <orderEntry type="jdk" jdkName="Android 4.4.2 Google APIs" jdkType="Android SDK" />
+    <orderEntry type="module-library" exported="">
       <library name="libmuseandroid.jar">
         <CLASSES>
           <root url="jar://$MODULE_DIR$/libs/libmuseandroid.jar!/" />
@@ -35,7 +35,6 @@
       </library>
     </orderEntry>
     <orderEntry type="sourceFolder" forTests="false" />
-    <orderEntry type="library" name="javaosc-ui-0.3" level="application" />
-    <orderEntry type="library" name="javaosc-core-0.3" level="application" />
+    <orderEntry type="module" module-name="javaosc-core" />
   </component>
 </module>
