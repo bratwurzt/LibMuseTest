@@ -9,13 +9,7 @@ import java.lang.ref.WeakReference;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.regex.Pattern;
@@ -38,18 +32,7 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import com.illposed.osc.OSCMessage;
 import com.illposed.osc.OSCPortOut;
-import com.interaxon.libmuse.ConnectionState;
-import com.interaxon.libmuse.LibMuseVersion;
-import com.interaxon.libmuse.Muse;
-import com.interaxon.libmuse.MuseArtifactPacket;
-import com.interaxon.libmuse.MuseConnectionListener;
-import com.interaxon.libmuse.MuseConnectionPacket;
-import com.interaxon.libmuse.MuseDataListener;
-import com.interaxon.libmuse.MuseDataPacket;
-import com.interaxon.libmuse.MuseDataPacketType;
-import com.interaxon.libmuse.MuseManager;
-import com.interaxon.libmuse.MusePreset;
-import com.interaxon.libmuse.MuseVersion;
+import com.interaxon.libmuse.*;
 
 /**
  * In this simple example MainActivity implements 2 MuseHeadband listeners and updates UI when data from Muse is received. Similarly you can implement listers for other data or
@@ -71,7 +54,9 @@ public class MainActivity extends Activity implements OnClickListener
   private boolean dataTransmission = true;
   private BlockingQueue<MuseDataPacket> m_dataQueue;
   private Handler mHandler = null;
+  private final Object m_alphaBetaLock = new Object();
   private Map<String, DataOscSender> m_dataOscSenders;
+  private Map<Long, Double> m_alphaFp1ValueMap, m_betaFp1ValueMap, m_alphaFp2ValueMap, m_betaFp2ValueMap;
   private EditText m_ipAddressEditText, m_portEditText;
   private TextView m_sendLocationsText;
 
@@ -84,6 +69,10 @@ public class MainActivity extends Activity implements OnClickListener
     dataListener = new DataListener(weakActivity);
     new Thread(dataListener).start();
     m_dataOscSenders = new HashMap<>();
+    m_alphaFp1ValueMap = new HashMap<>();
+    m_betaFp1ValueMap = new HashMap<>();
+    m_alphaFp2ValueMap = new HashMap<>();
+    m_betaFp2ValueMap = new HashMap<>();
   }
 
   @Override
@@ -528,6 +517,18 @@ public class MainActivity extends Activity implements OnClickListener
             default:
               break;
           }
+          long timestamp = p.getTimestamp();
+          synchronized (m_alphaBetaLock)
+          {
+            if (m_betaFp1ValueMap.containsKey(timestamp) && m_betaFp2ValueMap.containsKey(timestamp)
+                && m_alphaFp1ValueMap.containsKey(timestamp) && m_alphaFp2ValueMap.containsKey(timestamp))
+            {
+              ArrayList<Object> sendList = new ArrayList<>();
+              sendList.add(Math.abs((float)(m_alphaFp1ValueMap.remove(timestamp) / m_betaFp1ValueMap.remove(timestamp))));
+              sendList.add(Math.abs((float)(m_alphaFp2ValueMap.remove(timestamp) / m_betaFp2ValueMap.remove(timestamp))));
+              m_oscSender.send(new OSCMessage("/muse/elements/alpha_beta_fp_ratio", sendList));
+            }
+          }
         }
         catch (InterruptedException | IOException e)
         {
@@ -592,6 +593,24 @@ public class MainActivity extends Activity implements OnClickListener
       try
       {
         m_dataQueue.put(p);
+        ArrayList<Double> values = p.getValues();
+        long timestamp = p.getTimestamp();
+        synchronized (m_alphaBetaLock)
+        {
+          switch (p.getPacketType())
+          {
+            case ALPHA_ABSOLUTE:
+              m_alphaFp1ValueMap.put(timestamp, values.get(Eeg.FP1.ordinal()));
+              m_alphaFp2ValueMap.put(timestamp, values.get(Eeg.FP2.ordinal()));
+              break;
+            case BETA_ABSOLUTE:
+              m_betaFp1ValueMap.put(timestamp, values.get(Eeg.FP1.ordinal()));
+              m_betaFp2ValueMap.put(timestamp, values.get(Eeg.FP2.ordinal()));
+              break;
+            default:
+              break;
+          }
+        }
       }
       catch (InterruptedException e)
       {

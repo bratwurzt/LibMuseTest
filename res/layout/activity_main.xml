@@ -173,7 +173,8 @@
         android:layout_weight="0.55"
         android:textSize="16sp"
         android:inputType="phone"
-        android:text="10.99.8.161"/>
+        android:text="192.168.1.2"
+        />
 
     <EditText
         android:id="@+id/port_edit_text"
