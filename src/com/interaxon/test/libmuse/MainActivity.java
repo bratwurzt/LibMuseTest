@@ -56,7 +56,7 @@ public class MainActivity extends Activity implements OnClickListener
   private Handler mHandler = null;
   private final Object m_alphaBetaLock = new Object();
   private Map<String, DataOscSender> m_dataOscSenders;
-  private Map<Long, Double> m_alphaFp1ValueMap, m_betaFp1ValueMap, m_alphaFp2ValueMap, m_betaFp2ValueMap;
+  private Map<Long, Double[]> m_alphaFpValueMap, m_betaFpValueMap;
   private EditText m_ipAddressEditText, m_portEditText;
   private TextView m_sendLocationsText;
 
@@ -69,10 +69,8 @@ public class MainActivity extends Activity implements OnClickListener
     dataListener = new DataListener(weakActivity);
     new Thread(dataListener).start();
     m_dataOscSenders = new HashMap<>();
-    m_alphaFp1ValueMap = new HashMap<>();
-    m_betaFp1ValueMap = new HashMap<>();
-    m_alphaFp2ValueMap = new HashMap<>();
-    m_betaFp2ValueMap = new HashMap<>();
+    m_alphaFpValueMap = new HashMap<>();
+    m_betaFpValueMap = new HashMap<>();
   }
 
   @Override
@@ -80,19 +78,19 @@ public class MainActivity extends Activity implements OnClickListener
   {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_main);
-    Button refreshButton = (Button)findViewById(R.id.refresh);
+    Button refreshButton = (Button) findViewById(R.id.refresh);
     refreshButton.setOnClickListener(this);
-    Button connectButton = (Button)findViewById(R.id.connect);
+    Button connectButton = (Button) findViewById(R.id.connect);
     connectButton.setOnClickListener(this);
-    Button disconnectButton = (Button)findViewById(R.id.disconnect);
+    Button disconnectButton = (Button) findViewById(R.id.disconnect);
     disconnectButton.setOnClickListener(this);
-    Button pauseButton = (Button)findViewById(R.id.pause);
+    Button pauseButton = (Button) findViewById(R.id.pause);
     pauseButton.setOnClickListener(this);
-    Button sendOscButton = (Button)findViewById(R.id.send_osc);
+    Button sendOscButton = (Button) findViewById(R.id.send_osc);
     sendOscButton.setOnClickListener(this);
-    m_ipAddressEditText = (EditText)findViewById(R.id.ip_address_edit_text);
-    m_sendLocationsText = (TextView)findViewById(R.id.send_locations);
-    m_portEditText = (EditText)findViewById(R.id.port_edit_text);
+    m_ipAddressEditText = (EditText) findViewById(R.id.ip_address_edit_text);
+    m_sendLocationsText = (TextView) findViewById(R.id.send_locations);
+    m_portEditText = (EditText) findViewById(R.id.port_edit_text);
     m_ipAddressEditText.addTextChangedListener(new TextWatcher()
     {
       @Override
@@ -201,7 +199,7 @@ public class MainActivity extends Activity implements OnClickListener
   @Override
   public void onClick(View v)
   {
-    Spinner musesSpinner = (Spinner)findViewById(R.id.muses_spinner);
+    Spinner musesSpinner = (Spinner) findViewById(R.id.muses_spinner);
     if (v.getId() == R.id.refresh)
     {
       MuseManager.refreshPairedMuses();
@@ -376,9 +374,9 @@ public class MainActivity extends Activity implements OnClickListener
           @Override
           public void run()
           {
-            TextView statusText = (TextView)findViewById(R.id.con_status);
+            TextView statusText = (TextView) findViewById(R.id.con_status);
             statusText.setText(status);
-            TextView museVersionText = (TextView)findViewById(R.id.version);
+            TextView museVersionText = (TextView) findViewById(R.id.version);
             if (current == ConnectionState.CONNECTED)
             {
               MuseVersion museVersion = muse.getMuseVersion();
@@ -403,6 +401,7 @@ public class MainActivity extends Activity implements OnClickListener
     protected OSCPortOut m_oscSender;
     private volatile boolean m_senderRunning = true;
     protected String m_ipAddress, m_port;
+    private long m_index = 0;
 
     public DataOscSender(String ipAddress, int port)
     {
@@ -435,14 +434,14 @@ public class MainActivity extends Activity implements OnClickListener
               m_oscSender.send(new OSCMessage("/muse/eeg/quantization", getFloats(p)));
               break;
             case DROPPED_EEG:
-              int droppedEeg = (int)p.getValues().get(0).doubleValue();
+              int droppedEeg = (int) p.getValues().get(0).doubleValue();
               m_oscSender.send(new OSCMessage("/muse/eeg/dropped_samples", Collections.singleton(droppedEeg)));
               break;
             case ACCELEROMETER:
               m_oscSender.send(new OSCMessage("/muse/acc", getFloats(p)));
               break;
             case DROPPED_ACCELEROMETER:
-              int droppedAcc = (int)p.getValues().get(0).doubleValue();
+              int droppedAcc = (int) p.getValues().get(0).doubleValue();
               m_oscSender.send(new OSCMessage("/muse/acc/dropped_samples", Collections.singleton(droppedAcc)));
               break;
             case DRL_REF:
@@ -471,9 +470,11 @@ public class MainActivity extends Activity implements OnClickListener
               break;
             case ALPHA_ABSOLUTE:
               m_oscSender.send(new OSCMessage("/muse/elements/alpha_absolute", getFloats(p)));
+              computeAndSendFpAsymmetry();
               break;
             case BETA_ABSOLUTE:
               m_oscSender.send(new OSCMessage("/muse/elements/beta_absolute", getFloats(p)));
+              computeAndSendFpAsymmetry();
               break;
             case DELTA_ABSOLUTE:
               m_oscSender.send(new OSCMessage("/muse/elements/delta_absolute", getFloats(p)));
@@ -507,28 +508,17 @@ public class MainActivity extends Activity implements OnClickListener
               break;
             case BATTERY:
               ArrayList<Object> returnList = new ArrayList<>();
-              returnList.add((int)(p.getValues().get(0) * 100));
-              returnList.add((int)(double)p.getValues().get(1));
-              returnList.add((int)(double)p.getValues().get(1));
-              returnList.add((int)(double)p.getValues().get(2));
+              returnList.add((int) (p.getValues().get(0) * 100));
+              returnList.add((int) (double) p.getValues().get(1));
+              returnList.add((int) (double) p.getValues().get(1));
+              returnList.add((int) (double) p.getValues().get(2));
               m_oscSender.send(new OSCMessage("/muse/batt", returnList));
               break;
 
             default:
               break;
           }
-          long timestamp = p.getTimestamp();
-          synchronized (m_alphaBetaLock)
-          {
-            if (m_betaFp1ValueMap.containsKey(timestamp) && m_betaFp2ValueMap.containsKey(timestamp)
-                && m_alphaFp1ValueMap.containsKey(timestamp) && m_alphaFp2ValueMap.containsKey(timestamp))
-            {
-              ArrayList<Object> sendList = new ArrayList<>();
-              sendList.add(Math.abs((float)(m_alphaFp1ValueMap.remove(timestamp) / m_betaFp1ValueMap.remove(timestamp))));
-              sendList.add(Math.abs((float)(m_alphaFp2ValueMap.remove(timestamp) / m_betaFp2ValueMap.remove(timestamp))));
-              m_oscSender.send(new OSCMessage("/muse/elements/alpha_beta_fp_ratio", sendList));
-            }
-          }
+
         }
         catch (InterruptedException | IOException e)
         {
@@ -543,7 +533,7 @@ public class MainActivity extends Activity implements OnClickListener
 
       for (double value : packet.getValues())
       {
-        returnList.add((float)value);
+        returnList.add((float) value);
       }
       return returnList;
     }
@@ -562,6 +552,26 @@ public class MainActivity extends Activity implements OnClickListener
     {
       return m_port;
     }
+
+    private void computeAndSendFpAsymmetry() throws IOException
+    {
+      synchronized (m_alphaBetaLock)
+      {
+        if (m_betaFpValueMap.containsKey(m_index) && m_alphaFpValueMap.containsKey(m_index))
+        {
+          ArrayList<Object> sendList = new ArrayList<>();
+          Double[] fp1fp2Alpha = m_alphaFpValueMap.remove(m_index);
+          Double[] fp1fp2Beta = m_betaFpValueMap.remove(m_index);
+          float fp1 = (float) Math.abs(fp1fp2Alpha[0] / fp1fp2Beta[0]);
+          float fp2 = (float) Math.abs(fp1fp2Alpha[1] / fp1fp2Beta[1]);
+          sendList.add(fp1);
+          sendList.add(fp2);
+          sendList.add(fp2 - fp1);
+          m_oscSender.send(new OSCMessage("/muse/elements/alpha_beta_fp_ratio", sendList));
+          m_index++;
+        }
+      }
+    }
   }
 
   /**
@@ -573,6 +583,7 @@ public class MainActivity extends Activity implements OnClickListener
   {
     final WeakReference<Activity> activityRef;
     //    private MuseFileWriter fileWriter;
+    private long m_index = 0;
 
     protected DataListener(final WeakReference<Activity> activityRef)
     {
@@ -594,18 +605,23 @@ public class MainActivity extends Activity implements OnClickListener
       {
         m_dataQueue.put(p);
         ArrayList<Double> values = p.getValues();
-        long timestamp = p.getTimestamp();
         synchronized (m_alphaBetaLock)
         {
           switch (p.getPacketType())
           {
             case ALPHA_ABSOLUTE:
-              m_alphaFp1ValueMap.put(timestamp, values.get(Eeg.FP1.ordinal()));
-              m_alphaFp2ValueMap.put(timestamp, values.get(Eeg.FP2.ordinal()));
+              m_alphaFpValueMap.put(m_index, new Double[]{values.get(Eeg.FP1.ordinal()), values.get(Eeg.FP2.ordinal())});
+              if (m_betaFpValueMap.containsKey(m_index))
+              {
+                m_index++;
+              }
               break;
             case BETA_ABSOLUTE:
-              m_betaFp1ValueMap.put(timestamp, values.get(Eeg.FP1.ordinal()));
-              m_betaFp2ValueMap.put(timestamp, values.get(Eeg.FP2.ordinal()));
+              m_betaFpValueMap.put(m_index, new Double[]{values.get(Eeg.FP1.ordinal()), values.get(Eeg.FP2.ordinal())});
+              if (m_alphaFpValueMap.containsKey(m_index))
+              {
+                m_index++;
+              }
               break;
             default:
               break;
