@@ -18,5 +18,8 @@
   <string name="pause">Pause/Resume</string>
   <string name="drop">Drop</string>
   <string name="muse_elem">Elements:</string>
+  <string name="send_osc">Send</string>
+  <string name="init_port">5001</string>
+  <string name="sending_to">Sending to:</string>
 
 </resources>

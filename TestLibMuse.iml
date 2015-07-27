@@ -24,8 +24,8 @@
       <excludeFolder url="file://$MODULE_DIR$/.idea" />
       <excludeFolder url="file://$MODULE_DIR$/.settings" />
     </content>
-    <orderEntry type="jdk" jdkName="Android 4.4.2 Google APIs" jdkType="Android SDK" />
-    <orderEntry type="module-library" exported="">
+    <orderEntry type="jdk" jdkName="Android API 19 Platform" jdkType="Android SDK" />
+    <orderEntry type="module-library">
       <library name="libmuseandroid.jar">
         <CLASSES>
           <root url="jar://$MODULE_DIR$/libs/libmuseandroid.jar!/" />

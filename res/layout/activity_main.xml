@@ -1,38 +1,44 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-              android:orientation="vertical"
-              android:layout_width="match_parent"
-              android:layout_height="match_parent">
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
 
   <Spinner
       android:id="@+id/muses_spinner"
       android:layout_width="match_parent"
       android:layout_height="60dp"/>
+
   <LinearLayout
       android:layout_width="match_parent"
       android:layout_height="45dp"
       android:orientation="horizontal">
+
     <Button
         android:id="@+id/refresh"
         android:layout_width="100dp"
         android:layout_height="40dp"
         android:text="@string/refresh"/>
+
     <Button
         android:id="@+id/connect"
         android:layout_width="100dp"
         android:layout_height="40dp"
         android:text="@string/connect"/>
+
     <Button
         android:id="@+id/disconnect"
         android:layout_width="120dp"
         android:layout_height="40dp"
         android:text="@string/disconnect"/>
   </LinearLayout>
+
   <TextView
       android:layout_width="match_parent"
       android:layout_height="match_parent"
       android:layout_weight="1"
       android:textSize="16sp"
       android:text="@string/status"/>
+
   <TextView
       android:id="@+id/con_status"
       android:layout_width="match_parent"
@@ -40,125 +46,174 @@
       android:layout_weight="1"
       android:textSize="16sp"
       android:text="@string/undefined"/>
-  <TextView
-      android:layout_width="match_parent"
-      android:layout_height="match_parent"
-      android:layout_weight="1"
-      android:textSize="16sp"
-      android:text="@string/eeg"/>
+  <!--<TextView-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:textSize="16sp"-->
+  <!--android:text="@string/eeg"/>-->
+  <!--<LinearLayout-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:orientation="horizontal">-->
+  <!--<TextView-->
+  <!--android:id="@+id/eeg_tp9"-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:textSize="16sp"-->
+  <!--android:text="@string/init_val"/>-->
+  <!--<TextView-->
+  <!--android:id="@+id/eeg_fp1"-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:textSize="16sp"-->
+  <!--android:text="@string/init_val"/>-->
+  <!--<TextView-->
+  <!--android:id="@+id/eeg_fp2"-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:textSize="16sp"-->
+  <!--android:text="@string/init_val"/>-->
+  <!--<TextView-->
+  <!--android:id="@+id/eeg_tp10"-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:textSize="16sp"-->
+  <!--android:text="@string/init_val"/>-->
+  <!--</LinearLayout>-->
+  <!--<TextView-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:textSize="16sp"-->
+  <!--android:text="@string/accel"/>-->
+  <!--<LinearLayout-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:orientation="horizontal">-->
+  <!--<TextView-->
+  <!--android:id="@+id/acc_x"-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:textSize="16sp"-->
+  <!--android:text="@string/init_val"/>-->
+  <!--<TextView-->
+  <!--android:id="@+id/acc_y"-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:textSize="16sp"-->
+  <!--android:text="@string/init_val"/>-->
+  <!--<TextView-->
+  <!--android:id="@+id/acc_z"-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:textSize="16sp"-->
+  <!--android:text="@string/init_val"/>-->
+  <!--</LinearLayout>-->
+  <!--<TextView-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:textSize="16sp"-->
+  <!--android:text="@string/muse_elem"/>-->
+  <!--<LinearLayout-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:orientation="horizontal">-->
+  <!--<TextView-->
+  <!--android:id="@+id/elem1"-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:textSize="16sp"-->
+  <!--android:text="@string/init_val"/>-->
+  <!--<TextView-->
+  <!--android:id="@+id/elem2"-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:textSize="16sp"-->
+  <!--android:text="@string/init_val"/>-->
+  <!--<TextView-->
+  <!--android:id="@+id/elem3"-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:textSize="16sp"-->
+  <!--android:text="@string/init_val"/>-->
+  <!--<TextView-->
+  <!--android:id="@+id/elem4"-->
+  <!--android:layout_width="match_parent"-->
+  <!--android:layout_height="match_parent"-->
+  <!--android:layout_weight="1"-->
+  <!--android:textSize="16sp"-->
+  <!--android:text="@string/init_val"/>-->
+  <!--</LinearLayout>-->
+
   <LinearLayout
       android:layout_width="match_parent"
       android:layout_height="match_parent"
       android:layout_weight="1"
       android:orientation="horizontal">
-    <TextView
-        android:id="@+id/eeg_tp9"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
+
+    <EditText
+        android:id="@+id/ip_address_edit_text"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="0.55"
         android:textSize="16sp"
-        android:text="@string/init_val"/>
-    <TextView
-        android:id="@+id/eeg_fp1"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
+        android:inputType="phone"
+        android:text="10.99.8.161"/>
+
+    <EditText
+        android:id="@+id/port_edit_text"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="0.2"
         android:textSize="16sp"
-        android:text="@string/init_val"/>
-    <TextView
-        android:id="@+id/eeg_fp2"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:textSize="16sp"
-        android:text="@string/init_val"/>
-    <TextView
-        android:id="@+id/eeg_tp10"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:textSize="16sp"
-        android:text="@string/init_val"/>
+        android:inputType="numberDecimal"
+        android:text="@string/init_port"/>
+    <Button
+        android:id="@+id/send_osc"
+        android:layout_width="0dp"
+        android:layout_weight="0.15"
+        android:layout_height="wrap_content"
+        android:text="@string/send_osc"/>
+
   </LinearLayout>
+
   <TextView
       android:layout_width="match_parent"
       android:layout_height="match_parent"
       android:layout_weight="1"
       android:textSize="16sp"
-      android:text="@string/accel"/>
-  <LinearLayout
-      android:layout_width="match_parent"
-      android:layout_height="match_parent"
-      android:layout_weight="1"
-      android:orientation="horizontal">
-    <TextView
-        android:id="@+id/acc_x"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:textSize="16sp"
-        android:text="@string/init_val"/>
-    <TextView
-        android:id="@+id/acc_y"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:textSize="16sp"
-        android:text="@string/init_val"/>
-    <TextView
-        android:id="@+id/acc_z"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:textSize="16sp"
-        android:text="@string/init_val"/>
-  </LinearLayout>
+      android:text="@string/sending_to"/>
+
   <TextView
+      android:id="@+id/send_locations"
       android:layout_width="match_parent"
       android:layout_height="match_parent"
       android:layout_weight="1"
       android:textSize="16sp"
-      android:text="@string/muse_elem"/>
-  <LinearLayout
-      android:layout_width="match_parent"
-      android:layout_height="match_parent"
-      android:layout_weight="1"
-      android:orientation="horizontal">
-    <TextView
-        android:id="@+id/elem1"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:textSize="16sp"
-        android:text="@string/init_val"/>
-    <TextView
-        android:id="@+id/elem2"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:textSize="16sp"
-        android:text="@string/init_val"/>
-    <TextView
-        android:id="@+id/elem3"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:textSize="16sp"
-        android:text="@string/init_val"/>
-    <TextView
-        android:id="@+id/elem4"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_weight="1"
-        android:textSize="16sp"
-        android:text="@string/init_val"/>
-  </LinearLayout>
+      android:text=""/>
+
   <TextView
       android:layout_width="match_parent"
       android:layout_height="match_parent"
       android:layout_weight="1"
       android:textSize="16sp"
       android:text="@string/version"/>
+
   <TextView
       android:id="@+id/version"
       android:layout_width="match_parent"
@@ -166,14 +221,16 @@
       android:layout_weight="1"
       android:textSize="16sp"
       android:text="@string/undefined"/>
+
   <LinearLayout
       android:layout_width="match_parent"
       android:layout_height="45dp"
       android:orientation="horizontal">
+
     <Button
         android:id="@+id/pause"
         android:layout_width="150dp"
-        android:layout_height="40dp"
+        android:layout_height="wrap_content"
         android:text="@string/pause"/>
   </LinearLayout>
 

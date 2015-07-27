@@ -4,22 +4,28 @@
 
 package com.interaxon.test.libmuse;
 
-import java.io.File;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.regex.Pattern;
 
 import android.app.Activity;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -27,25 +33,20 @@ import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.Spinner;
 import android.widget.TextView;
 import com.illposed.osc.OSCMessage;
 import com.illposed.osc.OSCPortOut;
-import com.interaxon.libmuse.AnnotationData;
 import com.interaxon.libmuse.ConnectionState;
-import com.interaxon.libmuse.Eeg;
 import com.interaxon.libmuse.LibMuseVersion;
-import com.interaxon.libmuse.MessageType;
 import com.interaxon.libmuse.Muse;
 import com.interaxon.libmuse.MuseArtifactPacket;
-import com.interaxon.libmuse.MuseConfiguration;
 import com.interaxon.libmuse.MuseConnectionListener;
 import com.interaxon.libmuse.MuseConnectionPacket;
 import com.interaxon.libmuse.MuseDataListener;
 import com.interaxon.libmuse.MuseDataPacket;
 import com.interaxon.libmuse.MuseDataPacketType;
-import com.interaxon.libmuse.MuseFileFactory;
-import com.interaxon.libmuse.MuseFileReader;
 import com.interaxon.libmuse.MuseManager;
 import com.interaxon.libmuse.MusePreset;
 import com.interaxon.libmuse.MuseVersion;
@@ -61,16 +62,18 @@ import com.interaxon.libmuse.MuseVersion;
  */
 public class MainActivity extends Activity implements OnClickListener
 {
-  private volatile boolean m_senderRunning = true;
-  private final SimpleDateFormat m_dateFormat = new SimpleDateFormat("yyyyMMddhhmm");
+  private static final Pattern PARTIAl_IP_ADDRESS =
+      Pattern.compile("^((25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[0-9])\\.){0,3}((25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[0-9])){0,1}$");
+  private static String OSC_SENDERS = "OSC_SENDERS";
   private Muse muse = null;
   private ConnectionListener connectionListener = null;
   private DataListener dataListener = null;
   private boolean dataTransmission = true;
   private BlockingQueue<MuseDataPacket> m_dataQueue;
-  //  private MuseFileWriter fileWriter = null;
   private Handler mHandler = null;
-  private DataOscSender m_dataOscSender;
+  private Map<String, DataOscSender> m_dataOscSenders;
+  private EditText m_ipAddressEditText, m_portEditText;
+  private TextView m_sendLocationsText;
 
   public MainActivity()
   {
@@ -79,9 +82,8 @@ public class MainActivity extends Activity implements OnClickListener
     WeakReference<Activity> weakActivity = new WeakReference<>(this);
     connectionListener = new ConnectionListener(weakActivity);
     dataListener = new DataListener(weakActivity);
-    m_dataOscSender = new DataOscSender("192.168.1.2", 41672);
     new Thread(dataListener).start();
-    new Thread(m_dataOscSender).start();
+    m_dataOscSenders = new HashMap<>();
   }
 
   @Override
@@ -89,26 +91,105 @@ public class MainActivity extends Activity implements OnClickListener
   {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_main);
-    Button refreshButton = (Button) findViewById(R.id.refresh);
+    Button refreshButton = (Button)findViewById(R.id.refresh);
     refreshButton.setOnClickListener(this);
-    Button connectButton = (Button) findViewById(R.id.connect);
+    Button connectButton = (Button)findViewById(R.id.connect);
     connectButton.setOnClickListener(this);
-    Button disconnectButton = (Button) findViewById(R.id.disconnect);
+    Button disconnectButton = (Button)findViewById(R.id.disconnect);
     disconnectButton.setOnClickListener(this);
-    Button pauseButton = (Button) findViewById(R.id.pause);
+    Button pauseButton = (Button)findViewById(R.id.pause);
     pauseButton.setOnClickListener(this);
+    Button sendOscButton = (Button)findViewById(R.id.send_osc);
+    sendOscButton.setOnClickListener(this);
+    m_ipAddressEditText = (EditText)findViewById(R.id.ip_address_edit_text);
+    m_sendLocationsText = (TextView)findViewById(R.id.send_locations);
+    m_portEditText = (EditText)findViewById(R.id.port_edit_text);
+    m_ipAddressEditText.addTextChangedListener(new TextWatcher()
+    {
+      @Override
+      public void onTextChanged(CharSequence s, int start, int before, int count)
+      {
+      }
 
-    File dir = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
-//    fileWriter = MuseFileFactory.getMuseFileWriter(new File(dir, "new_muse_file" + m_dateFormat.format(new Date()) + ".muse"));
+      @Override
+      public void beforeTextChanged(CharSequence s, int start, int count, int after)
+      {
+      }
+
+      private String mPreviousText = "";
+
+      @Override
+      public void afterTextChanged(Editable s)
+      {
+        if (PARTIAl_IP_ADDRESS.matcher(s).matches())
+        {
+          mPreviousText = s.toString();
+        }
+        else
+        {
+          s.replace(0, s.length(), mPreviousText);
+        }
+      }
+    });
+
+    if (m_dataOscSenders == null)
+    {
+      m_dataOscSenders = new HashMap<>();
+    }
+
+    if (savedInstanceState != null)
+    {
+      ArrayList<String> senders = savedInstanceState.getStringArrayList(OSC_SENDERS);
+      for (int i = 0; i < senders.size(); i += 2)
+      {
+        String ipAddress = senders.get(i);
+        Integer port = Integer.valueOf(senders.get(i + 1));
+        DataOscSender oscSender = new DataOscSender(ipAddress, port);
+        m_dataOscSenders.put(ipAddress, oscSender);
+        if (muse != null && muse.getConnectionState() == ConnectionState.CONNECTED && dataTransmission)
+        {
+          new Thread(oscSender).start();
+          m_sendLocationsText.append(ipAddress + ":" + port + "\n");
+        }
+      }
+    }
+
+    //File dir = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
+    //fileWriter = MuseFileFactory.getMuseFileWriter(new File(dir, "new_muse_file" + m_dateFormat.format(new Date()) + ".muse"));
     Log.i("Muse Headband", "libmuse version=" + LibMuseVersion.SDK_VERSION);
-//    fileWriter.addAnnotationString(1, "MainActivity onCreate");
-//    dataListener.setFileWriter(fileWriter);
+    //    fileWriter.addAnnotationString(1, "MainActivity onCreate");
+    //    dataListener.setFileWriter(fileWriter);
+  }
+
+  @Override
+  protected void onSaveInstanceState(Bundle outState)
+  {
+    super.onSaveInstanceState(outState);
+    ArrayList<String> senders = new ArrayList<>();
+    for (DataOscSender sender : m_dataOscSenders.values())
+    {
+      senders.add(sender.getIpAddress());
+      senders.add(sender.getPort());
+    }
+    outState.putStringArrayList(OSC_SENDERS, senders);
+  }
+
+  private void closeSenders()
+  {
+    for (Iterator<DataOscSender> iter = m_dataOscSenders.values().iterator(); iter.hasNext(); )
+    {
+      DataOscSender sender = iter.next();
+      sender.setSenderRunning(false);
+      iter.remove();
+    }
+    m_sendLocationsText.setText("");
   }
 
   @Override
   protected void onPause()
   {
     super.onPause();
+    closeSenders();
     mHandler.getLooper().quit();
   }
 
@@ -116,6 +197,7 @@ public class MainActivity extends Activity implements OnClickListener
   protected void onStop()
   {
     super.onStop();
+    closeSenders();
     mHandler.getLooper().quit();
   }
 
@@ -123,13 +205,14 @@ public class MainActivity extends Activity implements OnClickListener
   protected void onDestroy()
   {
     super.onDestroy();
+    closeSenders();
     mHandler.getLooper().quit();
   }
 
   @Override
   public void onClick(View v)
   {
-    Spinner musesSpinner = (Spinner) findViewById(R.id.muses_spinner);
+    Spinner musesSpinner = (Spinner)findViewById(R.id.muses_spinner);
     if (v.getId() == R.id.refresh)
     {
       MuseManager.refreshPairedMuses();
@@ -157,15 +240,13 @@ public class MainActivity extends Activity implements OnClickListener
       {
         muse = pairedMuses.get(musesSpinner.getSelectedItemPosition());
         ConnectionState state = muse.getConnectionState();
-        if (state == ConnectionState.CONNECTED ||
-            state == ConnectionState.CONNECTING)
+        if (state == ConnectionState.CONNECTED || state == ConnectionState.CONNECTING)
         {
           Log.w("Muse Headband", "doesn't make sense to connect second time to the same muse");
           return;
         }
         configureLibrary();
-//        fileWriter.open();
-//        fileWriter.addAnnotationString(1, "Connect clicked");
+
         /**
          * In most cases libmuse native library takes care about
          * exceptions and recovery mechanism, but native code still
@@ -196,9 +277,6 @@ public class MainActivity extends Activity implements OnClickListener
          * muse.disconnect(false);
          */
         muse.disconnect(true);
-//        fileWriter.addAnnotationString(1, "Disconnect clicked");
-//        fileWriter.flush();
-//        fileWriter.close();
       }
     }
     else if (v.getId() == R.id.pause)
@@ -209,53 +287,16 @@ public class MainActivity extends Activity implements OnClickListener
         muse.enableDataTransmission(dataTransmission);
       }
     }
-  }
-
-  /*
-   * Simple example of getting data from the "*.muse" file
-   */
-  private void playMuseFile(String name)
-  {
-    File dir = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
-    File file = new File(dir, name);
-    final String tag = "Muse File Reader";
-    if (!file.exists())
+    else if (v.getId() == R.id.send_osc)
     {
-      Log.w(tag, "file doesn't exist");
-      return;
-    }
-    MuseFileReader fileReader = MuseFileFactory.getMuseFileReader(file);
-    while (fileReader.gotoNextMessage())
-    {
-      MessageType type = fileReader.getMessageType();
-      int id = fileReader.getMessageId();
-      long timestamp = fileReader.getMessageTimestamp();
-      Log.i(tag, "type: " + type.toString() +
-          " id: " + Integer.toString(id) +
-          " timestamp: " + String.valueOf(timestamp));
-      switch (type)
+      String ipAddress = m_ipAddressEditText.getText().toString();
+      Integer port = Integer.parseInt(m_portEditText.getText().toString());
+      DataOscSender dataOscSender = new DataOscSender(ipAddress, port);
+      m_dataOscSenders.put(ipAddress, dataOscSender);
+      new Thread(dataOscSender).start();
+      for (DataOscSender sender : m_dataOscSenders.values())
       {
-        case EEG:
-        case BATTERY:
-        case ACCELEROMETER:
-        case QUANTIZATION:
-          MuseDataPacket packet = fileReader.getDataPacket();
-          Log.i(tag, "data packet: " + packet.getPacketType().toString());
-          break;
-        case VERSION:
-          MuseVersion version = fileReader.getVersion();
-          Log.i(tag, "version" + version.getFirmwareType());
-          break;
-        case CONFIGURATION:
-          MuseConfiguration config = fileReader.getConfiguration();
-          Log.i(tag, "config" + config.getBluetoothMac());
-          break;
-        case ANNOTATION:
-          AnnotationData annotation = fileReader.getAnnotation();
-          Log.i(tag, "annotation" + annotation.getData());
-          break;
-        default:
-          break;
+        m_sendLocationsText.append(sender.getIpAddress() + ":" + sender.getPort() + "\n");
       }
     }
   }
@@ -346,9 +387,9 @@ public class MainActivity extends Activity implements OnClickListener
           @Override
           public void run()
           {
-            TextView statusText = (TextView) findViewById(R.id.con_status);
+            TextView statusText = (TextView)findViewById(R.id.con_status);
             statusText.setText(status);
-            TextView museVersionText = (TextView) findViewById(R.id.version);
+            TextView museVersionText = (TextView)findViewById(R.id.version);
             if (current == ConnectionState.CONNECTED)
             {
               MuseVersion museVersion = muse.getMuseVersion();
@@ -371,11 +412,15 @@ public class MainActivity extends Activity implements OnClickListener
   class DataOscSender implements Runnable
   {
     protected OSCPortOut m_oscSender;
+    private volatile boolean m_senderRunning = true;
+    protected String m_ipAddress, m_port;
 
     public DataOscSender(String ipAddress, int port)
     {
       try
       {
+        m_ipAddress = ipAddress;
+        m_port = String.valueOf(port);
         m_oscSender = new OSCPortOut(InetAddress.getByName(ipAddress), port);
       }
       catch (SocketException | UnknownHostException e)
@@ -401,14 +446,14 @@ public class MainActivity extends Activity implements OnClickListener
               m_oscSender.send(new OSCMessage("/muse/eeg/quantization", getFloats(p)));
               break;
             case DROPPED_EEG:
-              int droppedEeg = (int) p.getValues().get(0).doubleValue();
+              int droppedEeg = (int)p.getValues().get(0).doubleValue();
               m_oscSender.send(new OSCMessage("/muse/eeg/dropped_samples", Collections.singleton(droppedEeg)));
               break;
             case ACCELEROMETER:
               m_oscSender.send(new OSCMessage("/muse/acc", getFloats(p)));
               break;
             case DROPPED_ACCELEROMETER:
-              int droppedAcc = (int) p.getValues().get(0).doubleValue();
+              int droppedAcc = (int)p.getValues().get(0).doubleValue();
               m_oscSender.send(new OSCMessage("/muse/acc/dropped_samples", Collections.singleton(droppedAcc)));
               break;
             case DRL_REF:
@@ -473,10 +518,10 @@ public class MainActivity extends Activity implements OnClickListener
               break;
             case BATTERY:
               ArrayList<Object> returnList = new ArrayList<>();
-              returnList.add((int) (p.getValues().get(0) * 100));
-              returnList.add((int) (double) p.getValues().get(1));
-              returnList.add((int) (double) p.getValues().get(1));
-              returnList.add((int) (double) p.getValues().get(2));
+              returnList.add((int)(p.getValues().get(0) * 100));
+              returnList.add((int)(double)p.getValues().get(1));
+              returnList.add((int)(double)p.getValues().get(1));
+              returnList.add((int)(double)p.getValues().get(2));
               m_oscSender.send(new OSCMessage("/muse/batt", returnList));
               break;
 
@@ -497,9 +542,24 @@ public class MainActivity extends Activity implements OnClickListener
 
       for (double value : packet.getValues())
       {
-        returnList.add((float) value);
+        returnList.add((float)value);
       }
       return returnList;
+    }
+
+    public synchronized void setSenderRunning(boolean senderRunning)
+    {
+      m_senderRunning = senderRunning;
+    }
+
+    public String getIpAddress()
+    {
+      return m_ipAddress;
+    }
+
+    public String getPort()
+    {
+      return m_port;
     }
   }
 
@@ -511,7 +571,7 @@ public class MainActivity extends Activity implements OnClickListener
   class DataListener extends MuseDataListener implements Runnable
   {
     final WeakReference<Activity> activityRef;
-//    private MuseFileWriter fileWriter;
+    //    private MuseFileWriter fileWriter;
 
     protected DataListener(final WeakReference<Activity> activityRef)
     {
@@ -542,53 +602,52 @@ public class MainActivity extends Activity implements OnClickListener
     @Override
     public void receiveMuseArtifactPacket(MuseArtifactPacket p)
     {
-//      if (p.getHeadbandOn() && (p.getBlink() || p.getJawClench()))
-//      {
-//        try
-//        {
-//          if (p.getBlink())
-//          {
-//            m_oscSender.send(new OSCMessage("/muse/elements/blink", Collections.singleton(1)));
-//          }
-//          if (p.getJawClench())
-//          {
-//            m_oscSender.send(new OSCMessage("/muse/elements/jaw_clench", Collections.singleton(1)));
-//          }
-//        }
-//        catch (IOException e)
-//        {
-//          Log.e("Muse Headband", e.toString());
-//        }
-//      }
+      //      if (p.getHeadbandOn() && (p.getBlink() || p.getJawClench()))
+      //      {
+      //        try
+      //        {
+      //          if (p.getBlink())
+      //          {
+      //            m_oscSender.send(new OSCMessage("/muse/elements/blink", Collections.singleton(1)));
+      //          }
+      //          if (p.getJawClench())
+      //          {
+      //            m_oscSender.send(new OSCMessage("/muse/elements/jaw_clench", Collections.singleton(1)));
+      //          }
+      //        }
+      //        catch (IOException e)
+      //        {
+      //          Log.e("Muse Headband", e.toString());
+      //        }
+      //      }
     }
 
+    //private void updateAlphaRelative(final ArrayList<Double> data)
+    //{
+    //  Activity activity = activityRef.get();
+    //  if (activity != null)
+    //  {
+    //    activity.runOnUiThread(new Runnable()
+    //    {
+    //      @Override
+    //      public void run()
+    //      {
+    //        TextView elem1 = (TextView) findViewById(R.id.ip_address_edit_text);
+    //        TextView elem2 = (TextView) findViewById(R.id.elem2);
+    //        TextView elem3 = (TextView) findViewById(R.id.elem3);
+    //        TextView elem4 = (TextView) findViewById(R.id.elem4);
+    //        elem1.setText(String.format("%6.2f", data.get(Eeg.TP9.ordinal())));
+    //        elem2.setText(String.format("%6.2f", data.get(Eeg.FP1.ordinal())));
+    //        elem3.setText(String.format("%6.2f", data.get(Eeg.FP2.ordinal())));
+    //        elem4.setText(String.format("%6.2f", data.get(Eeg.TP10.ordinal())));
+    //      }
+    //    });
+    //  }
+    //}
 
-    private void updateAlphaRelative(final ArrayList<Double> data)
-    {
-      Activity activity = activityRef.get();
-      if (activity != null)
-      {
-        activity.runOnUiThread(new Runnable()
-        {
-          @Override
-          public void run()
-          {
-            TextView elem1 = (TextView) findViewById(R.id.elem1);
-            TextView elem2 = (TextView) findViewById(R.id.elem2);
-            TextView elem3 = (TextView) findViewById(R.id.elem3);
-            TextView elem4 = (TextView) findViewById(R.id.elem4);
-            elem1.setText(String.format("%6.2f", data.get(Eeg.TP9.ordinal())));
-            elem2.setText(String.format("%6.2f", data.get(Eeg.FP1.ordinal())));
-            elem3.setText(String.format("%6.2f", data.get(Eeg.FP2.ordinal())));
-            elem4.setText(String.format("%6.2f", data.get(Eeg.TP10.ordinal())));
-          }
-        });
-      }
-    }
-
-//    public void setFileWriter(MuseFileWriter fileWriter)
-//    {
-//      this.fileWriter = fileWriter;
-//    }
+    //    public void setFileWriter(MuseFileWriter fileWriter)
+    //    {
+    //      this.fileWriter = fileWriter;
+    //    }
   }
 }
