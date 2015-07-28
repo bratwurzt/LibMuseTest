@@ -562,11 +562,14 @@ public class MainActivity extends Activity implements OnClickListener
           ArrayList<Object> sendList = new ArrayList<>();
           Double[] fp1fp2Alpha = m_alphaFpValueMap.remove(m_index);
           Double[] fp1fp2Beta = m_betaFpValueMap.remove(m_index);
-          float fp1 = (float) Math.abs(fp1fp2Alpha[0] / fp1fp2Beta[0]);
-          float fp2 = (float) Math.abs(fp1fp2Alpha[1] / fp1fp2Beta[1]);
+          // arousal
+          float fp1 = (float) (fp1fp2Alpha[0] - fp1fp2Beta[0]);
+          float fp2 = (float) (fp1fp2Alpha[1] - fp1fp2Beta[1]);
           sendList.add(fp1);
           sendList.add(fp2);
-          sendList.add(fp2 - fp1);
+          sendList.add((fp2+fp2)/2);
+          // valence
+          sendList.add((float)(fp1fp2Alpha[1] - fp1fp2Alpha[0]));
           m_oscSender.send(new OSCMessage("/muse/elements/alpha_beta_fp_ratio", sendList));
           m_index++;
         }
