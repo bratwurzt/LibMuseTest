@@ -9,7 +9,12 @@ import java.lang.ref.WeakReference;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.regex.Pattern;
@@ -32,7 +37,19 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import com.illposed.osc.OSCMessage;
 import com.illposed.osc.OSCPortOut;
-import com.interaxon.libmuse.*;
+import com.interaxon.libmuse.ConnectionState;
+import com.interaxon.libmuse.Eeg;
+import com.interaxon.libmuse.LibMuseVersion;
+import com.interaxon.libmuse.Muse;
+import com.interaxon.libmuse.MuseArtifactPacket;
+import com.interaxon.libmuse.MuseConnectionListener;
+import com.interaxon.libmuse.MuseConnectionPacket;
+import com.interaxon.libmuse.MuseDataListener;
+import com.interaxon.libmuse.MuseDataPacket;
+import com.interaxon.libmuse.MuseDataPacketType;
+import com.interaxon.libmuse.MuseManager;
+import com.interaxon.libmuse.MusePreset;
+import com.interaxon.libmuse.MuseVersion;
 
 /**
  * In this simple example MainActivity implements 2 MuseHeadband listeners and updates UI when data from Muse is received. Similarly you can implement listers for other data or
@@ -53,24 +70,29 @@ public class MainActivity extends Activity implements OnClickListener
   private DataListener dataListener = null;
   private boolean dataTransmission = true;
   private BlockingQueue<MuseDataPacket> m_dataQueue;
+  private BlockingQueue<Float> m_mellowQueue;
   private Handler mHandler = null;
   private final Object m_alphaBetaLock = new Object();
-  private Map<String, DataOscSender> m_dataOscSenders;
-  private Map<Long, Double[]> m_alphaFpValueMap, m_betaFpValueMap;
+  private Map<String, DataOscSender> m_dataOscSenderMap;
+  private DataProcessor m_dataProcessor;
+  private Map<Long, Float[]> m_alphaFpValueMap, m_betaFpValueMap;
+  private BlockingQueue<ArrayList<Object>> m_fpArousalValenceQueue;
   private EditText m_ipAddressEditText, m_portEditText;
   private TextView m_sendLocationsText;
 
   public MainActivity()
   {
     m_dataQueue = new LinkedBlockingQueue<>();
+    m_dataOscSenderMap = new HashMap<>();
+    m_alphaFpValueMap = new HashMap<>();
+    m_betaFpValueMap = new HashMap<>();
+    m_mellowQueue = new LinkedBlockingQueue<>();
+    m_fpArousalValenceQueue = new LinkedBlockingQueue<>();
     // Create listeners and pass reference to activity to them
     WeakReference<Activity> weakActivity = new WeakReference<>(this);
     connectionListener = new ConnectionListener(weakActivity);
     dataListener = new DataListener(weakActivity);
     new Thread(dataListener).start();
-    m_dataOscSenders = new HashMap<>();
-    m_alphaFpValueMap = new HashMap<>();
-    m_betaFpValueMap = new HashMap<>();
   }
 
   @Override
@@ -78,19 +100,19 @@ public class MainActivity extends Activity implements OnClickListener
   {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_main);
-    Button refreshButton = (Button) findViewById(R.id.refresh);
+    Button refreshButton = (Button)findViewById(R.id.refresh);
     refreshButton.setOnClickListener(this);
-    Button connectButton = (Button) findViewById(R.id.connect);
+    Button connectButton = (Button)findViewById(R.id.connect);
     connectButton.setOnClickListener(this);
-    Button disconnectButton = (Button) findViewById(R.id.disconnect);
+    Button disconnectButton = (Button)findViewById(R.id.disconnect);
     disconnectButton.setOnClickListener(this);
-    Button pauseButton = (Button) findViewById(R.id.pause);
+    Button pauseButton = (Button)findViewById(R.id.pause);
     pauseButton.setOnClickListener(this);
-    Button sendOscButton = (Button) findViewById(R.id.send_osc);
+    Button sendOscButton = (Button)findViewById(R.id.send_osc);
     sendOscButton.setOnClickListener(this);
-    m_ipAddressEditText = (EditText) findViewById(R.id.ip_address_edit_text);
-    m_sendLocationsText = (TextView) findViewById(R.id.send_locations);
-    m_portEditText = (EditText) findViewById(R.id.port_edit_text);
+    m_ipAddressEditText = (EditText)findViewById(R.id.ip_address_edit_text);
+    m_sendLocationsText = (TextView)findViewById(R.id.send_locations);
+    m_portEditText = (EditText)findViewById(R.id.port_edit_text);
     m_ipAddressEditText.addTextChangedListener(new TextWatcher()
     {
       @Override
@@ -119,33 +141,34 @@ public class MainActivity extends Activity implements OnClickListener
       }
     });
 
-    if (m_dataOscSenders == null)
+    if (m_dataOscSenderMap == null)
     {
-      m_dataOscSenders = new HashMap<>();
+      m_dataOscSenderMap = new HashMap<>();
     }
 
     if (savedInstanceState != null)
     {
-      ArrayList<String> senders = savedInstanceState.getStringArrayList(OSC_SENDERS);
-      for (int i = 0; i < senders.size(); i += 2)
+      ArrayList<String> list = savedInstanceState.getStringArrayList(OSC_SENDERS);
+      for (int i = 0; i < list.size(); i += 2)
       {
-        String ipAddress = senders.get(i);
-        Integer port = Integer.valueOf(senders.get(i + 1));
-        DataOscSender oscSender = new DataOscSender(ipAddress, port);
-        m_dataOscSenders.put(ipAddress, oscSender);
+        String ipAddress = list.get(i);
+        Integer port = Integer.valueOf(list.get(i + 1));
+        DataOscSender oscSender = new DataOscSender(ipAddress, port); //todo put processor into stop/pause/kill logic stream
+        m_dataOscSenderMap.put(ipAddress, oscSender);
         if (muse != null && muse.getConnectionState() == ConnectionState.CONNECTED && dataTransmission)
         {
           new Thread(oscSender).start();
           m_sendLocationsText.append(ipAddress + ":" + port + "\n");
         }
       }
-    }
 
-    //File dir = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS);
-    //fileWriter = MuseFileFactory.getMuseFileWriter(new File(dir, "new_muse_file" + m_dateFormat.format(new Date()) + ".muse"));
+      if (list.size() > 0)
+      {
+        m_dataProcessor = new DataProcessor();
+        new Thread(m_dataProcessor).start();
+      }
+    }
     Log.i("Muse Headband", "libmuse version=" + LibMuseVersion.SDK_VERSION);
-    //    fileWriter.addAnnotationString(1, "MainActivity onCreate");
-    //    dataListener.setFileWriter(fileWriter);
   }
 
   @Override
@@ -153,7 +176,7 @@ public class MainActivity extends Activity implements OnClickListener
   {
     super.onSaveInstanceState(outState);
     ArrayList<String> senders = new ArrayList<>();
-    for (DataOscSender sender : m_dataOscSenders.values())
+    for (DataOscSender sender : m_dataOscSenderMap.values())
     {
       senders.add(sender.getIpAddress());
       senders.add(sender.getPort());
@@ -161,14 +184,16 @@ public class MainActivity extends Activity implements OnClickListener
     outState.putStringArrayList(OSC_SENDERS, senders);
   }
 
-  private void closeSenders()
+  private void closeSendersAndProcessors()
   {
-    for (Iterator<DataOscSender> iter = m_dataOscSenders.values().iterator(); iter.hasNext(); )
+    for (Iterator<DataOscSender> iter = m_dataOscSenderMap.values().iterator(); iter.hasNext(); )
     {
       DataOscSender sender = iter.next();
       sender.setSenderRunning(false);
       iter.remove();
     }
+
+    m_dataProcessor.setRunning(false);
     m_sendLocationsText.setText("");
   }
 
@@ -176,7 +201,7 @@ public class MainActivity extends Activity implements OnClickListener
   protected void onPause()
   {
     super.onPause();
-    closeSenders();
+    closeSendersAndProcessors();
     mHandler.getLooper().quit();
   }
 
@@ -184,7 +209,7 @@ public class MainActivity extends Activity implements OnClickListener
   protected void onStop()
   {
     super.onStop();
-    closeSenders();
+    closeSendersAndProcessors();
     mHandler.getLooper().quit();
   }
 
@@ -192,26 +217,26 @@ public class MainActivity extends Activity implements OnClickListener
   protected void onDestroy()
   {
     super.onDestroy();
-    closeSenders();
+    closeSendersAndProcessors();
     mHandler.getLooper().quit();
   }
 
   @Override
   public void onClick(View v)
   {
-    Spinner musesSpinner = (Spinner) findViewById(R.id.muses_spinner);
+    Spinner musesSpinner = (Spinner)findViewById(R.id.muses_spinner);
     if (v.getId() == R.id.refresh)
     {
       MuseManager.refreshPairedMuses();
       List<Muse> pairedMuses = MuseManager.getPairedMuses();
-      List<String> spinnerItems = new ArrayList<String>();
+      List<String> spinnerItems = new ArrayList<>();
       for (Muse m : pairedMuses)
       {
         String dev_id = m.getName() + "-" + m.getMacAddress();
         Log.i("Muse Headband", dev_id);
         spinnerItems.add(dev_id);
       }
-      ArrayAdapter<String> adapterArray = new ArrayAdapter<String>(
+      ArrayAdapter<String> adapterArray = new ArrayAdapter<>(
           this, android.R.layout.simple_spinner_item, spinnerItems);
       musesSpinner.setAdapter(adapterArray);
     }
@@ -279,9 +304,16 @@ public class MainActivity extends Activity implements OnClickListener
       String ipAddress = m_ipAddressEditText.getText().toString();
       Integer port = Integer.parseInt(m_portEditText.getText().toString());
       DataOscSender dataOscSender = new DataOscSender(ipAddress, port);
-      m_dataOscSenders.put(ipAddress, dataOscSender);
+      m_dataOscSenderMap.put(ipAddress, dataOscSender);
       new Thread(dataOscSender).start();
-      for (DataOscSender sender : m_dataOscSenders.values())
+
+      if (m_dataProcessor == null || !m_dataProcessor.isRunning())
+      {
+        m_dataProcessor = new DataProcessor();
+        new Thread(m_dataProcessor).start();
+      }
+
+      for (DataOscSender sender : m_dataOscSenderMap.values())
       {
         m_sendLocationsText.append(sender.getIpAddress() + ":" + sender.getPort() + "\n");
       }
@@ -292,32 +324,32 @@ public class MainActivity extends Activity implements OnClickListener
   {
     muse.registerConnectionListener(connectionListener);
     muse.registerDataListener(dataListener, MuseDataPacketType.EEG);
-    muse.registerDataListener(dataListener, MuseDataPacketType.DROPPED_EEG);
-    muse.registerDataListener(dataListener, MuseDataPacketType.QUANTIZATION);
-    muse.registerDataListener(dataListener, MuseDataPacketType.ACCELEROMETER);
-    muse.registerDataListener(dataListener, MuseDataPacketType.DROPPED_ACCELEROMETER);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.DROPPED_EEG);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.QUANTIZATION);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.ACCELEROMETER);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.DROPPED_ACCELEROMETER);
     muse.registerDataListener(dataListener, MuseDataPacketType.ARTIFACTS);
-    muse.registerDataListener(dataListener, MuseDataPacketType.DRL_REF);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.DRL_REF);
     muse.registerDataListener(dataListener, MuseDataPacketType.HORSESHOE);
     muse.registerDataListener(dataListener, MuseDataPacketType.BATTERY);
-    muse.registerDataListener(dataListener, MuseDataPacketType.ALPHA_RELATIVE);
-    muse.registerDataListener(dataListener, MuseDataPacketType.BETA_RELATIVE);
-    muse.registerDataListener(dataListener, MuseDataPacketType.DELTA_RELATIVE);
-    muse.registerDataListener(dataListener, MuseDataPacketType.THETA_RELATIVE);
-    muse.registerDataListener(dataListener, MuseDataPacketType.GAMMA_RELATIVE);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.ALPHA_RELATIVE);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.BETA_RELATIVE);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.DELTA_RELATIVE);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.THETA_RELATIVE);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.GAMMA_RELATIVE);
     muse.registerDataListener(dataListener, MuseDataPacketType.ALPHA_ABSOLUTE);
     muse.registerDataListener(dataListener, MuseDataPacketType.BETA_ABSOLUTE);
     muse.registerDataListener(dataListener, MuseDataPacketType.DELTA_ABSOLUTE);
     muse.registerDataListener(dataListener, MuseDataPacketType.THETA_ABSOLUTE);
     muse.registerDataListener(dataListener, MuseDataPacketType.GAMMA_ABSOLUTE);
-    muse.registerDataListener(dataListener, MuseDataPacketType.ALPHA_SCORE);
-    muse.registerDataListener(dataListener, MuseDataPacketType.BETA_SCORE);
-    muse.registerDataListener(dataListener, MuseDataPacketType.DELTA_SCORE);
-    muse.registerDataListener(dataListener, MuseDataPacketType.THETA_SCORE);
-    muse.registerDataListener(dataListener, MuseDataPacketType.GAMMA_SCORE);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.ALPHA_SCORE);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.BETA_SCORE);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.DELTA_SCORE);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.THETA_SCORE);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.GAMMA_SCORE);
     muse.registerDataListener(dataListener, MuseDataPacketType.MELLOW);
     muse.registerDataListener(dataListener, MuseDataPacketType.CONCENTRATION);
-    muse.setPreset(MusePreset.PRESET_14);
+    muse.setPreset(MusePreset.PRESET_10);
     muse.enableDataTransmission(dataTransmission);
   }
 
@@ -336,11 +368,7 @@ public class MainActivity extends Activity implements OnClickListener
     // automatically handle clicks on the Home/Up button, so long
     // as you specify a parent activity in AndroidManifest.xml.
     int id = item.getItemId();
-    if (id == R.id.action_settings)
-    {
-      return true;
-    }
-    return super.onOptionsItemSelected(item);
+    return id == R.id.action_settings || super.onOptionsItemSelected(item);
   }
 
   /**
@@ -374,17 +402,16 @@ public class MainActivity extends Activity implements OnClickListener
           @Override
           public void run()
           {
-            TextView statusText = (TextView) findViewById(R.id.con_status);
+            TextView statusText = (TextView)findViewById(R.id.con_status);
             statusText.setText(status);
-            TextView museVersionText = (TextView) findViewById(R.id.version);
+            TextView museVersionText = (TextView)findViewById(R.id.version);
             if (current == ConnectionState.CONNECTED)
             {
               MuseVersion museVersion = muse.getMuseVersion();
-              String version = museVersion.getFirmwareType() +
-                  " - " + museVersion.getFirmwareVersion() +
-                  " - " + Integer.toString(
-                  museVersion.getProtocolVersion());
-              museVersionText.setText(version);
+              museVersionText.setText(museVersion.getFirmwareType() +
+                      " - " + museVersion.getFirmwareVersion() +
+                      " - " + Integer.toString(museVersion.getProtocolVersion())
+              );
             }
             else
             {
@@ -396,12 +423,86 @@ public class MainActivity extends Activity implements OnClickListener
     }
   }
 
+  class DataProcessor implements Runnable
+  {
+    private volatile boolean m_running = true;
+    private long m_index = 0;
+
+    @Override
+    public void run()
+    {
+      while (m_running)
+      {
+        try
+        {
+          calculateMellowAverage();
+          computeFpArousalValence();
+          Thread.sleep(5);
+        }
+        catch (IOException | InterruptedException e)
+        {
+          Log.e("DataProcessor", e.toString());
+        }
+      }
+    }
+
+    private void computeFpArousalValence() throws IOException
+    {
+      synchronized (m_alphaBetaLock)
+      {
+        if (m_betaFpValueMap.containsKey(m_index) && m_alphaFpValueMap.containsKey(m_index))
+        {
+          ArrayList<Object> sendList = new ArrayList<>();
+          Float[] fp1fp2Alpha = m_alphaFpValueMap.remove(m_index);
+          Float[] fp1fp2Beta = m_betaFpValueMap.remove(m_index);
+          // arousal
+          float fp1 = fp1fp2Alpha[0] - fp1fp2Beta[0];
+          float fp2 = fp1fp2Alpha[1] - fp1fp2Beta[1];
+          sendList.add(fp1);
+          sendList.add(fp2);
+          sendList.add((fp2 + fp2) / 2);
+          // valence
+          sendList.add(fp1fp2Alpha[1] - fp1fp2Alpha[0]);
+          m_fpArousalValenceQueue.add(sendList);
+          m_index++;
+        }
+      }
+    }
+
+    private void calculateMellowAverage()
+    {
+      while (m_mellowQueue.size() > 30)
+      {
+        m_mellowQueue.remove();
+      }
+      Float avg = 0f;
+      for (Float mellowData : m_mellowQueue)
+      {
+        avg += mellowData;
+      }
+      avg /= m_mellowQueue.size();
+      if (avg > 70f)
+      {
+        Log.i("Muse Headband", "mellow avg=" + avg);
+      }
+    }
+
+    public void setRunning(boolean running)
+    {
+      m_running = running;
+    }
+
+    public boolean isRunning()
+    {
+      return m_running;
+    }
+  }
+
   class DataOscSender implements Runnable
   {
     protected OSCPortOut m_oscSender;
     private volatile boolean m_senderRunning = true;
     protected String m_ipAddress, m_port;
-    private long m_index = 0;
 
     public DataOscSender(String ipAddress, int port)
     {
@@ -434,14 +535,14 @@ public class MainActivity extends Activity implements OnClickListener
               m_oscSender.send(new OSCMessage("/muse/eeg/quantization", getFloats(p)));
               break;
             case DROPPED_EEG:
-              int droppedEeg = (int) p.getValues().get(0).doubleValue();
+              int droppedEeg = (int)p.getValues().get(0).doubleValue();
               m_oscSender.send(new OSCMessage("/muse/eeg/dropped_samples", Collections.singleton(droppedEeg)));
               break;
             case ACCELEROMETER:
               m_oscSender.send(new OSCMessage("/muse/acc", getFloats(p)));
               break;
             case DROPPED_ACCELEROMETER:
-              int droppedAcc = (int) p.getValues().get(0).doubleValue();
+              int droppedAcc = (int)p.getValues().get(0).doubleValue();
               m_oscSender.send(new OSCMessage("/muse/acc/dropped_samples", Collections.singleton(droppedAcc)));
               break;
             case DRL_REF:
@@ -470,11 +571,17 @@ public class MainActivity extends Activity implements OnClickListener
               break;
             case ALPHA_ABSOLUTE:
               m_oscSender.send(new OSCMessage("/muse/elements/alpha_absolute", getFloats(p)));
-              computeAndSendFpAsymmetry();
+              if (m_fpArousalValenceQueue.size() > 0)
+              {
+                m_oscSender.send(new OSCMessage("/muse/elements/experimental/arousal_valence_fp", m_fpArousalValenceQueue.remove()));
+              }
               break;
             case BETA_ABSOLUTE:
               m_oscSender.send(new OSCMessage("/muse/elements/beta_absolute", getFloats(p)));
-              computeAndSendFpAsymmetry();
+              if (m_fpArousalValenceQueue.size() > 0)
+              {
+                m_oscSender.send(new OSCMessage("/muse/elements/experimental/arousal_valence_fp", m_fpArousalValenceQueue.remove()));
+              }
               break;
             case DELTA_ABSOLUTE:
               m_oscSender.send(new OSCMessage("/muse/elements/delta_absolute", getFloats(p)));
@@ -508,17 +615,16 @@ public class MainActivity extends Activity implements OnClickListener
               break;
             case BATTERY:
               ArrayList<Object> returnList = new ArrayList<>();
-              returnList.add((int) (p.getValues().get(0) * 100));
-              returnList.add((int) (double) p.getValues().get(1));
-              returnList.add((int) (double) p.getValues().get(1));
-              returnList.add((int) (double) p.getValues().get(2));
+              returnList.add((int)(p.getValues().get(0) * 100));
+              returnList.add((int)(double)p.getValues().get(1));
+              returnList.add((int)(double)p.getValues().get(1));
+              returnList.add((int)(double)p.getValues().get(2));
               m_oscSender.send(new OSCMessage("/muse/batt", returnList));
               break;
 
             default:
               break;
           }
-
         }
         catch (InterruptedException | IOException e)
         {
@@ -533,7 +639,7 @@ public class MainActivity extends Activity implements OnClickListener
 
       for (double value : packet.getValues())
       {
-        returnList.add((float) value);
+        returnList.add((float)value);
       }
       return returnList;
     }
@@ -551,29 +657,6 @@ public class MainActivity extends Activity implements OnClickListener
     public String getPort()
     {
       return m_port;
-    }
-
-    private void computeAndSendFpAsymmetry() throws IOException
-    {
-      synchronized (m_alphaBetaLock)
-      {
-        if (m_betaFpValueMap.containsKey(m_index) && m_alphaFpValueMap.containsKey(m_index))
-        {
-          ArrayList<Object> sendList = new ArrayList<>();
-          Double[] fp1fp2Alpha = m_alphaFpValueMap.remove(m_index);
-          Double[] fp1fp2Beta = m_betaFpValueMap.remove(m_index);
-          // arousal
-          float fp1 = (float) (fp1fp2Alpha[0] - fp1fp2Beta[0]);
-          float fp2 = (float) (fp1fp2Alpha[1] - fp1fp2Beta[1]);
-          sendList.add(fp1);
-          sendList.add(fp2);
-          sendList.add((fp2+fp2)/2);
-          // valence
-          sendList.add((float)(fp1fp2Alpha[1] - fp1fp2Alpha[0]));
-          m_oscSender.send(new OSCMessage("/muse/elements/alpha_beta_fp_ratio", sendList));
-          m_index++;
-        }
-      }
     }
   }
 
@@ -608,27 +691,33 @@ public class MainActivity extends Activity implements OnClickListener
       {
         m_dataQueue.put(p);
         ArrayList<Double> values = p.getValues();
-        synchronized (m_alphaBetaLock)
+        switch (p.getPacketType())
         {
-          switch (p.getPacketType())
-          {
-            case ALPHA_ABSOLUTE:
-              m_alphaFpValueMap.put(m_index, new Double[]{values.get(Eeg.FP1.ordinal()), values.get(Eeg.FP2.ordinal())});
+          case ALPHA_ABSOLUTE:
+            synchronized (m_alphaBetaLock)
+            {
+              m_alphaFpValueMap.put(m_index, new Float[]{values.get(Eeg.FP1.ordinal()).floatValue(), values.get(Eeg.FP2.ordinal()).floatValue()});
               if (m_betaFpValueMap.containsKey(m_index))
               {
                 m_index++;
               }
               break;
-            case BETA_ABSOLUTE:
-              m_betaFpValueMap.put(m_index, new Double[]{values.get(Eeg.FP1.ordinal()), values.get(Eeg.FP2.ordinal())});
+            }
+          case BETA_ABSOLUTE:
+            synchronized (m_alphaBetaLock)
+            {
+              m_betaFpValueMap.put(m_index, new Float[]{values.get(Eeg.FP1.ordinal()).floatValue(), values.get(Eeg.FP2.ordinal()).floatValue()});
               if (m_alphaFpValueMap.containsKey(m_index))
               {
                 m_index++;
               }
               break;
-            default:
-              break;
-          }
+            }
+          case MELLOW:
+            m_mellowQueue.put(values.get(0).floatValue());
+            break;
+          default:
+            break;
         }
       }
       catch (InterruptedException e)
