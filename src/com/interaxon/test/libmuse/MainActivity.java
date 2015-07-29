@@ -576,6 +576,11 @@ public class MainActivity extends Activity implements OnClickListener
       m_mellowQueue.put(value);
     }
 
+    public void putConcentration(float value) throws InterruptedException
+    {
+      m_concentrationQueue.put(value);
+    }
+
     public synchronized void putAlphaFp(final Float[] floats)
     {
       m_alphaFpValueMap.put(m_putIndex, floats);
@@ -816,6 +821,9 @@ public class MainActivity extends Activity implements OnClickListener
             break;
           case MELLOW:
             m_dataProcessor.putMellow(values.get(0).floatValue());
+            break;
+          case CONCENTRATION:
+            m_dataProcessor.putConcentration(values.get(0).floatValue());
             break;
           default:
             break;
