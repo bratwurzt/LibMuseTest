@@ -10,6 +10,7 @@ import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -71,8 +72,9 @@ public class MainActivity extends Activity implements OnClickListener
   private boolean dataTransmission = true;
   private BlockingQueue<MuseDataPacket> m_dataQueue;
   private BlockingQueue<Float> m_mellowQueue;
+  protected Float m_mellowAvg;
   private Handler mHandler = null;
-  private final Object m_alphaBetaLock = new Object();
+  private final Object m_alphaBetaLock = new Object(), m_mellowAvgLock = new Object();
   private Map<String, DataOscSender> m_dataOscSenderMap;
   private DataProcessor m_dataProcessor;
   private Map<Long, Float[]> m_alphaFpValueMap, m_betaFpValueMap;
@@ -437,9 +439,8 @@ public class MainActivity extends Activity implements OnClickListener
         {
           calculateMellowAverage();
           computeFpArousalValence();
-          Thread.sleep(5);
         }
-        catch (IOException | InterruptedException e)
+        catch (IOException e)
         {
           Log.e("DataProcessor", e.toString());
         }
@@ -471,20 +472,20 @@ public class MainActivity extends Activity implements OnClickListener
 
     private void calculateMellowAverage()
     {
-      while (m_mellowQueue.size() > 30)
+      while (m_mellowQueue.size() > 60)
       {
         m_mellowQueue.remove();
       }
-      Float avg = 0f;
-      for (Float mellowData : m_mellowQueue)
+      synchronized (m_mellowAvgLock)
       {
-        avg += mellowData;
+        m_mellowAvg = 0f;
+        for (Float mellowData : m_mellowQueue)
+        {
+          m_mellowAvg += mellowData;
+        }
+        m_mellowAvg /= m_mellowQueue.size();
       }
-      avg /= m_mellowQueue.size();
-      if (avg > 70f)
-      {
-        Log.i("Muse Headband", "mellow avg=" + avg);
-      }
+      //Log.i("Muse Headband", "mellow avg=" + avg);
     }
 
     public void setRunning(boolean running)
@@ -608,7 +609,12 @@ public class MainActivity extends Activity implements OnClickListener
               m_oscSender.send(new OSCMessage("/muse/elements/gamma_session_score", getFloats(p)));
               break;
             case MELLOW:
-              m_oscSender.send(new OSCMessage("/muse/elements/experimental/mellow", getFloats(p)));
+              ArrayList<Object> floats = getFloats(p);
+              synchronized (m_mellowAvgLock)
+              {
+                floats.add(m_mellowAvg);
+                m_oscSender.send(new OSCMessage("/muse/elements/experimental/mellow", floats));
+              }
               break;
             case CONCENTRATION:
               m_oscSender.send(new OSCMessage("/muse/elements/experimental/concentration", getFloats(p)));
