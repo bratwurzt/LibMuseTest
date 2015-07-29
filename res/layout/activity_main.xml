@@ -173,7 +173,7 @@
         android:layout_weight="0.55"
         android:textSize="16sp"
         android:inputType="phone"
-        android:text="10.99.8.161"
+        android:text="@string/start_ip_address"
         />
 
     <EditText
