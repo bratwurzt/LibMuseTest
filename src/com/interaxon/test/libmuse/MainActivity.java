@@ -85,7 +85,7 @@ public class MainActivity extends Activity implements OnClickListener
     connectionListener = new ConnectionListener(weakActivity);
     dataListener = new DataListener(weakActivity);
     new Thread(dataListener).start();
-    new Thread(new HeapUsageLogger()).start();
+//    new Thread(new HeapUsageLogger()).start();
   }
 
   @Override
@@ -342,7 +342,7 @@ public class MainActivity extends Activity implements OnClickListener
     //muse.registerDataListener(dataListener, MuseDataPacketType.GAMMA_SCORE);
     muse.registerDataListener(dataListener, MuseDataPacketType.MELLOW);
     muse.registerDataListener(dataListener, MuseDataPacketType.CONCENTRATION);
-    muse.setPreset(MusePreset.PRESET_10);
+    muse.setPreset(MusePreset.PRESET_12);
     muse.enableDataTransmission(dataTransmission);
   }
 
@@ -446,7 +446,7 @@ public class MainActivity extends Activity implements OnClickListener
 
   class DataProcessor implements Runnable
   {
-    //    private final Object m_mellowAvgLock = new Object(), m_mellowQueueLock = new Object(), m_concentrationAvgLock = new Object(), m_concentrationQueueLock = new Object();
+    private final int MEAN_SAMPLE_SIZE = 100;
     private Float m_mellowAvg, m_concentrationAvg;
     private final Object m_mellowAvgLock = new Object(), m_concentrationAvgLock = new Object();
     private volatile boolean m_running = false;
@@ -509,7 +509,7 @@ public class MainActivity extends Activity implements OnClickListener
     private void calculateMellowAverage()
     {
       int size;
-      while ((size = m_mellowQueue.size()) > 60)
+      while ((size = m_mellowQueue.size()) > MEAN_SAMPLE_SIZE)
       {
         m_mellowQueue.poll();
       }
@@ -528,7 +528,7 @@ public class MainActivity extends Activity implements OnClickListener
     private void calculateConcentrationAverage()
     {
       int size;
-      while ((size = m_concentrationQueue.size()) > 60)
+      while ((size = m_concentrationQueue.size()) > MEAN_SAMPLE_SIZE)
       {
         m_concentrationQueue.poll();
       }
