@@ -10,7 +10,6 @@ import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -52,7 +51,6 @@ import com.interaxon.libmuse.MuseManager;
 import com.interaxon.libmuse.MusePreset;
 import com.interaxon.libmuse.MuseVersion;
 import com.interaxon.test.libmuse.filters.IDataFilter;
-import com.interaxon.test.libmuse.filters.MeanFilter;
 import com.interaxon.test.libmuse.filters.NormalizeMeanFilter;
 
 /**
@@ -66,6 +64,14 @@ import com.interaxon.test.libmuse.filters.NormalizeMeanFilter;
  */
 public class MainActivity extends Activity implements OnClickListener
 {
+  public static final String MELLOW = "MELLOW";
+  public static final String CONCENTRATION = "CONCENTRATION";
+  public static final String VALENCE_GIRALDO_RAMIREZ = "VALENCE_GIRALDO_RAMIREZ";
+  public static final String AROUSAL_GIRALDO_RAMIREZ = "AROUSAL_GIRALDO_RAMIREZ";
+  public static final String VALENCE_EMIL = "VALENCE_EMIL";
+  public static final String AROUSAL_EMIL = "AROUSAL_EMIL";
+  private static final int MEAN_SAMPLE_SIZE = 100;
+
   private static final Pattern PARTIAl_IP_ADDRESS =
       Pattern.compile("^((25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[0-9])\\.){0,3}((25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[0-9])){0,1}$");
   private static String OSC_SENDERS = "OSC_SENDERS";
@@ -454,11 +460,6 @@ public class MainActivity extends Activity implements OnClickListener
 
   class DataProcessor implements Runnable
   {
-    public final String MELLOW = "MELLOW";
-    public final String CONCENTRATION = "CONCENTRATION";
-    public final String VALENCE = "VALENCE";
-    public final String AROUSAL = "AROUSAL";
-    private final int MEAN_SAMPLE_SIZE = 100;
     private volatile boolean m_running = false;
     private long m_getIndex = 0, m_putIndex = 0;
     private ArrayList<Object> m_oscSendList;
@@ -471,10 +472,14 @@ public class MainActivity extends Activity implements OnClickListener
     public DataProcessor()
     {
       m_dataFilterMap = new ConcurrentHashMap<>();
-      m_dataFilterMap.put(MELLOW, new MeanFilter(MEAN_SAMPLE_SIZE*2));
-      m_dataFilterMap.put(CONCENTRATION, new MeanFilter(MEAN_SAMPLE_SIZE*2));
-      m_dataFilterMap.put(VALENCE, new NormalizeMeanFilter(200, 50));
-      m_dataFilterMap.put(AROUSAL, new NormalizeMeanFilter(200, 50));
+      //m_dataFilterMap.put(MELLOW, new MeanFilter(MEAN_SAMPLE_SIZE*2));
+      //m_dataFilterMap.put(CONCENTRATION, new MeanFilter(MEAN_SAMPLE_SIZE*2));
+      int MAX_MIN_SIZE = 100;
+      int MEAN_SIZE = 25;
+      m_dataFilterMap.put(VALENCE_GIRALDO_RAMIREZ, new NormalizeMeanFilter(MAX_MIN_SIZE, MEAN_SIZE));
+      m_dataFilterMap.put(AROUSAL_GIRALDO_RAMIREZ, new NormalizeMeanFilter(MAX_MIN_SIZE, MEAN_SIZE));
+      m_dataFilterMap.put(VALENCE_EMIL, new NormalizeMeanFilter(MAX_MIN_SIZE, MEAN_SIZE));
+      m_dataFilterMap.put(AROUSAL_EMIL, new NormalizeMeanFilter(MAX_MIN_SIZE, MEAN_SIZE));
       m_alphaFpValueMap = new ConcurrentHashMap<>();
       m_betaFpValueMap = new ConcurrentHashMap<>();
       m_fpArousalQueue = new LinkedBlockingQueue<>();
@@ -507,21 +512,25 @@ public class MainActivity extends Activity implements OnClickListener
         m_fp1fp2Beta = m_betaFpValueMap.remove(m_getIndex);
 
         // arousal
-        m_oscSendList.add(((m_fp1fp2Alpha[0] - m_fp1fp2Beta[0]) + (m_fp1fp2Alpha[1] - m_fp1fp2Beta[1])) / 2);
+        float arousalEmil = ((m_fp1fp2Alpha[0] - m_fp1fp2Beta[0]) + (m_fp1fp2Alpha[1] - m_fp1fp2Beta[1])) / 2;
+        //m_oscSendList.add(arousalEmil);
         // Sergio Giraldo, Rafael Ramirez:2013:Brain-Activity-Driven Real-Time Music Emotive Control:4
+        m_dataFilterMap.get(AROUSAL_EMIL).put(arousalEmil);
         float arousal = (m_fp1fp2Beta[0] + m_fp1fp2Beta[1]) / (m_fp1fp2Alpha[0] + m_fp1fp2Alpha[1]);
         //m_oscSendList.add(arousal);
-        m_dataFilterMap.get(AROUSAL).put(arousal);
+        m_dataFilterMap.get(AROUSAL_GIRALDO_RAMIREZ).put(arousal);
         m_fpArousalQueue.add(m_oscSendList);
 
         // valence
         // Kenneth Hugdahl, Richard J. Davidson:2003:The asymmetrical brain:568
         m_oscSendList = new ArrayList<>();
-        m_oscSendList.add(m_fp1fp2Alpha[1] - m_fp1fp2Alpha[0]);
+        float valenceEmil = m_fp1fp2Alpha[1] - m_fp1fp2Alpha[0];
+        //m_oscSendList.add(valenceEmil);
         // Sergio Giraldo, Rafael Ramirez:2013:Brain-Activity-Driven Real-Time Music Emotive Control:4
         float valence = m_fp1fp2Alpha[1] / m_fp1fp2Beta[1] - m_fp1fp2Alpha[0] / m_fp1fp2Beta[0];
         //m_oscSendList.add(valence);
-        m_dataFilterMap.get(VALENCE).put(valence);
+        m_dataFilterMap.get(VALENCE_GIRALDO_RAMIREZ).put(valence);
+        m_dataFilterMap.get(VALENCE_EMIL).put(valenceEmil);
         m_fpValenceQueue.add(m_oscSendList);
 
         m_getIndex++;
@@ -541,24 +550,9 @@ public class MainActivity extends Activity implements OnClickListener
       m_running = running;
     }
 
-    public synchronized Float getMellowAvg()
+    public synchronized Float getDataFilterValue(String key)
     {
-      return (Float)m_dataFilterMap.get(MELLOW).getValue();
-    }
-
-    public synchronized Float getConcentrationAvg()
-    {
-      return (Float)m_dataFilterMap.get(CONCENTRATION).getValue();
-    }
-
-    public synchronized Float getValenceNormalized()
-    {
-      return (Float)m_dataFilterMap.get(VALENCE).getValue();
-    }
-
-    public synchronized Float getArousalNormalized()
-    {
-      return (Float)m_dataFilterMap.get(AROUSAL).getValue();
+      return (Float)m_dataFilterMap.get(key).getValue();
     }
 
     public boolean isRunning()
@@ -566,14 +560,13 @@ public class MainActivity extends Activity implements OnClickListener
       return m_running;
     }
 
-    public void putMellow(float value) throws InterruptedException
+    public void putDataFilterValue(String key, float value) throws InterruptedException
     {
-      m_dataFilterMap.get(MELLOW).put(value);
-    }
-
-    public void putConcentration(float value) throws InterruptedException
-    {
-      m_dataFilterMap.get(CONCENTRATION).put(value);
+      IDataFilter iDataFilter = m_dataFilterMap.get(key);
+      if (iDataFilter != null)
+      {
+        iDataFilter.put(value);
+      }
     }
 
     public synchronized void putAlphaFp(final Float[] floats)
@@ -685,13 +678,15 @@ public class MainActivity extends Activity implements OnClickListener
                 m_sendList = m_dataProcessor.getFpArousal();
                 if (m_sendList != null)
                 {
-                  m_sendList.add(m_dataProcessor.getArousalNormalized());
+                  m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_EMIL));
+                  m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_GIRALDO_RAMIREZ));
                   m_oscSender.send(new OSCMessage("/muse/elements/experimental/arousal_fp", m_sendList));
                 }
                 m_sendList = m_dataProcessor.getFpValence();
                 if (m_sendList != null)
                 {
-                  m_sendList.add(m_dataProcessor.getValenceNormalized());
+                  m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_EMIL));
+                  m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_GIRALDO_RAMIREZ));
                   m_oscSender.send(new OSCMessage("/muse/elements/experimental/valence_fp", m_sendList));
                 }
                 break;
@@ -700,13 +695,15 @@ public class MainActivity extends Activity implements OnClickListener
                 m_sendList = m_dataProcessor.getFpArousal();
                 if (m_sendList != null)
                 {
-                  m_sendList.add(m_dataProcessor.getArousalNormalized());
+                  m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_EMIL));
+                  m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_GIRALDO_RAMIREZ));
                   m_oscSender.send(new OSCMessage("/muse/elements/experimental/arousal_fp", m_sendList));
                 }
                 m_sendList = m_dataProcessor.getFpValence();
                 if (m_sendList != null)
                 {
-                  m_sendList.add(m_dataProcessor.getValenceNormalized());
+                  m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_EMIL));
+                  m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_GIRALDO_RAMIREZ));
                   m_oscSender.send(new OSCMessage("/muse/elements/experimental/valence_fp", m_sendList));
                 }
                 break;
@@ -736,12 +733,12 @@ public class MainActivity extends Activity implements OnClickListener
                 break;
               case MELLOW:
                 m_floats = getFloats(p);
-                m_floats.add(m_dataProcessor.getMellowAvg());
+                //m_floats.add(m_dataProcessor.getMellowAvg());
                 m_oscSender.send(new OSCMessage("/muse/elements/experimental/mellow", m_floats));
                 break;
               case CONCENTRATION:
                 m_floats = getFloats(p);
-                m_floats.add(m_dataProcessor.getConcentrationAvg());
+                //m_floats.add(m_dataProcessor.getConcentrationAvg());
                 m_oscSender.send(new OSCMessage("/muse/elements/experimental/concentration", m_floats));
                 break;
               case BATTERY:
@@ -833,12 +830,12 @@ public class MainActivity extends Activity implements OnClickListener
           case BETA_ABSOLUTE:
             m_dataProcessor.putBetaFp(new Float[]{values.get(Eeg.FP1.ordinal()).floatValue(), values.get(Eeg.FP2.ordinal()).floatValue()});
             break;
-          case MELLOW:
-            m_dataProcessor.putMellow(values.get(0).floatValue());
-            break;
-          case CONCENTRATION:
-            m_dataProcessor.putConcentration(values.get(0).floatValue());
-            break;
+          //case MELLOW:
+          //  m_dataProcessor.putDataFilterValue(MELLOW, values.get(0).floatValue());
+          //  break;
+          //case CONCENTRATION:
+          //  m_dataProcessor.putDataFilterValue(CONCENTRATION, values.get(0).floatValue());
+          //  break;
           default:
             break;
         }
