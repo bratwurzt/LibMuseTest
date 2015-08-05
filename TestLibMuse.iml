@@ -29,6 +29,7 @@
       <excludeFolder url="file://$MODULE_DIR$/.settings" />
     </content>
     <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module-library">
       <library name="libmuseandroid.jar">
         <CLASSES>
@@ -38,7 +39,6 @@
         <SOURCES />
       </library>
     </orderEntry>
-    <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="javaosc-core" />
   </component>
 </module>
