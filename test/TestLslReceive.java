@@ -1,0 +1,28 @@
+import edu.ucsd.sccn.LSL;
+
+/**
+ * @author bratwurzt
+ */
+public class TestLslReceive
+{
+  public static void main(String[] args) throws Exception
+  {
+    System.out.println("Resolving an EEG stream...");
+    LSL.StreamInfo[] results = LSL.resolve_stream("type", "EEG");
+
+    // open an inlet
+    LSL.StreamInlet inlet = new LSL.StreamInlet(results[0]);
+
+    // receive data
+    float[] sample = new float[inlet.info().channel_count()];
+    while (true)
+    {
+      inlet.pull_sample(sample);
+      for (int k = 0; k < sample.length; k++)
+      {
+        System.out.print("\t" + Float.toString(sample[k]));
+      }
+      System.out.println();
+    }
+  }
+}

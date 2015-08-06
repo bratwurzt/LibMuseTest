@@ -35,6 +35,10 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Spinner;
 import android.widget.TextView;
+import com.example.hellojni.channel_format_t;
+import com.example.hellojni.stream_info;
+import com.example.hellojni.stream_outlet;
+import com.example.hellojni.vectorf;
 import com.illposed.osc.OSCMessage;
 import com.illposed.osc.OSCPortOut;
 import com.interaxon.libmuse.ConnectionState;
@@ -52,10 +56,6 @@ import com.interaxon.libmuse.MusePreset;
 import com.interaxon.libmuse.MuseVersion;
 import com.interaxon.test.libmuse.filters.IDataFilter;
 import com.interaxon.test.libmuse.filters.NormalizeMeanFilter;
-import com.lsl.ChannelFormatT;
-import com.lsl.LslAndroidJNI;
-import com.lsl.StreamInfo;
-import com.lsl.StreamOutlet;
 
 /**
  * In this simple example MainActivity implements 2 MuseHeadband listeners and updates UI when data from Muse is received. Similarly you can implement listers for other data or
@@ -68,7 +68,7 @@ import com.lsl.StreamOutlet;
  */
 public class MainActivity extends Activity implements OnClickListener
 {
-  private static LslAndroidJNI m_lsl = new LslAndroidJNI();
+  //private static LslAndroidJNI m_lsl = new LslAndroidJNI();
   static
   {
     System.loadLibrary("lslAndroid");
@@ -91,8 +91,9 @@ public class MainActivity extends Activity implements OnClickListener
   private boolean dataTransmission = true;
   private final BlockingQueue<MuseDataPacket> m_dataQueue;
   private Handler mHandler = null;
-  private Map<String, DataOscSender> m_dataOscSenderMap;
-  private final DataProcessor m_dataProcessor;
+  //private Map<String, DataOscSender> m_dataOscSenderMap;
+  private ArrayList<DataLslSender> m_dataLslSenderList;
+  //private final DataProcessor m_dataProcessor;
 
   private EditText m_ipAddressEditText, m_portEditText;
   private TextView m_sendLocationsText;
@@ -100,9 +101,9 @@ public class MainActivity extends Activity implements OnClickListener
   public MainActivity()
   {
     m_dataQueue = new LinkedBlockingQueue<>();
-    m_dataProcessor = new DataProcessor();
-    m_dataOscSenderMap = new HashMap<>();
-
+    //m_dataProcessor = new DataProcessor();
+    //m_dataOscSenderMap = new HashMap<>();
+    m_dataLslSenderList = new ArrayList<>();
     // Create listeners and pass reference to activity to them
     WeakReference<Activity> weakActivity = new WeakReference<Activity>(this);
     connectionListener = new ConnectionListener(weakActivity);
@@ -157,33 +158,33 @@ public class MainActivity extends Activity implements OnClickListener
       }
     });
 
-    if (m_dataOscSenderMap == null)
-    {
-      m_dataOscSenderMap = new HashMap<>();
-    }
+    //if (m_dataOscSenderMap == null)
+    //{
+    //  m_dataOscSenderMap = new HashMap<>();
+    //}
 
-    if (savedInstanceState != null)
-    {
-      ArrayList<String> list = savedInstanceState.getStringArrayList(OSC_SENDERS);
-      for (int i = 0; i < list.size(); i += 2)
-      {
-        String ipAddress = list.get(i);
-        Integer port = Integer.valueOf(list.get(i + 1));
-        DataOscSender oscSender = new DataOscSender(ipAddress, port); //todo put processor into stop/pause/kill logic stream
-        m_dataOscSenderMap.put(ipAddress, oscSender);
-        if (muse != null && muse.getConnectionState() == ConnectionState.CONNECTED && dataTransmission)
-        {
-          new Thread(oscSender).start();
-          m_sendLocationsText.append(ipAddress + ":" + port + "\n");
-        }
-      }
-
-      if (list.size() > 0)
-      {
-        m_dataProcessor.setRunning(true);
-        new Thread(m_dataProcessor).start();
-      }
-    }
+    //if (savedInstanceState != null)
+    //{
+    //  ArrayList<String> list = savedInstanceState.getStringArrayList(OSC_SENDERS);
+    //  for (int i = 0; i < list.size(); i += 2)
+    //  {
+    //    String ipAddress = list.get(i);
+    //    Integer port = Integer.valueOf(list.get(i + 1));
+    //    DataOscSender oscSender = new DataOscSender(ipAddress, port); //todo put processor into stop/pause/kill logic stream
+    //    m_dataOscSenderMap.put(ipAddress, oscSender);
+    //    if (muse != null && muse.getConnectionState() == ConnectionState.CONNECTED && dataTransmission)
+    //    {
+    //      new Thread(oscSender).start();
+    //      m_sendLocationsText.append(ipAddress + ":" + port + "\n");
+    //    }
+    //  }
+    //
+    //  if (list.size() > 0)
+    //  {
+    //    m_dataProcessor.setRunning(true);
+    //    new Thread(m_dataProcessor).start();
+    //  }
+    //}
     Log.i("Muse Headband", "libmuse version=" + LibMuseVersion.SDK_VERSION);
   }
 
@@ -191,25 +192,32 @@ public class MainActivity extends Activity implements OnClickListener
   protected void onSaveInstanceState(Bundle outState)
   {
     super.onSaveInstanceState(outState);
-    ArrayList<String> senders = new ArrayList<>();
-    for (DataOscSender sender : m_dataOscSenderMap.values())
-    {
-      senders.add(sender.getIpAddress());
-      senders.add(sender.getPort());
-    }
-    outState.putStringArrayList(OSC_SENDERS, senders);
+    //ArrayList<String> senders = new ArrayList<>();
+    //for (DataOscSender sender : m_dataOscSenderMap.values())
+    //{
+    //  senders.add(sender.getIpAddress());
+    //  senders.add(sender.getPort());
+    //}
+    //outState.putStringArrayList(OSC_SENDERS, senders);
   }
 
   private void closeSendersAndProcessors()
   {
-    for (Iterator<DataOscSender> iter = m_dataOscSenderMap.values().iterator(); iter.hasNext(); )
+    //for (Iterator<DataOscSender> iter = m_dataOscSenderMap.values().iterator(); iter.hasNext(); )
+    //{
+    //  DataOscSender sender = iter.next();
+    //  sender.setSenderRunning(false);
+    //  iter.remove();
+    //}
+
+    for (Iterator<DataLslSender> iter = m_dataLslSenderList.iterator(); iter.hasNext(); )
     {
-      DataOscSender sender = iter.next();
+      DataLslSender sender = iter.next();
       sender.setSenderRunning(false);
       iter.remove();
     }
 
-    m_dataProcessor.setRunning(false);
+    //m_dataProcessor.setRunning(false);
     m_sendLocationsText.setText("");
   }
 
@@ -317,22 +325,25 @@ public class MainActivity extends Activity implements OnClickListener
     }
     else if (v.getId() == R.id.send_osc)
     {
-      String ipAddress = m_ipAddressEditText.getText().toString();
-      Integer port = Integer.parseInt(m_portEditText.getText().toString());
-      DataOscSender dataOscSender = new DataOscSender(ipAddress, port);
-      m_dataOscSenderMap.put(ipAddress, dataOscSender);
-      new Thread(dataOscSender).start();
+      //String ipAddress = m_ipAddressEditText.getText().toString();
+      //Integer port = Integer.parseInt(m_portEditText.getText().toString());
+      //DataOscSender dataOscSender = new DataOscSender(ipAddress, port);
+      //m_dataOscSenderMap.put(ipAddress, dataOscSender);
+      //new Thread(dataOscSender).start();
+      DataLslSender dataLslSender = new DataLslSender();
+      m_dataLslSenderList.add(dataLslSender);
+      new Thread(dataLslSender).start();
 
-      if (!m_dataProcessor.isRunning())
-      {
-        m_dataProcessor.setRunning(true);
-        new Thread(m_dataProcessor).start();
-      }
+      //if (!m_dataProcessor.isRunning())
+      //{
+      //  m_dataProcessor.setRunning(true);
+      //  new Thread(m_dataProcessor).start();
+      //}
 
-      for (DataOscSender sender : m_dataOscSenderMap.values())
-      {
-        m_sendLocationsText.append(sender.getIpAddress() + ":" + sender.getPort() + "\n");
-      }
+      //for (DataOscSender sender : m_dataOscSenderMap.values())
+      //{
+      //  m_sendLocationsText.append(sender.getIpAddress() + ":" + sender.getPort() + "\n");
+      //}
     }
   }
 
@@ -607,26 +618,215 @@ public class MainActivity extends Activity implements OnClickListener
     }
   }
 
-  class DataOscSender implements Runnable
-  {
-    protected OSCPortOut m_oscSender;
-    private volatile boolean m_senderRunning = true;
-    protected String m_ipAddress, m_port;
-    private ArrayList<Object> m_floats;
-    private ArrayList<Object> m_sendList;
+  //class DataOscSender implements Runnable
+  //{
+  //  protected OSCPortOut m_oscSender;
+  //  private volatile boolean m_senderRunning = true;
+  //  protected String m_ipAddress, m_port;
+  //  private ArrayList<Object> m_floats;
+  //  private ArrayList<Object> m_sendList;
+  //
+  //  public DataOscSender(String ipAddress, int port)
+  //  {
+  //    try
+  //    {
+  //      m_ipAddress = ipAddress;
+  //      m_port = String.valueOf(port);
+  //      m_oscSender = new OSCPortOut(InetAddress.getByName(ipAddress), port);
+  //    }
+  //    catch (SocketException | UnknownHostException e)
+  //    {
+  //      Log.e("OscSender", e.toString());
+  //    }
+  //  }
+  //
+  //  @Override
+  //  public void run()
+  //  {
+  //    while (m_senderRunning)
+  //    {
+  //      try
+  //      {
+  //        MuseDataPacket p = m_dataQueue.poll();
+  //        if (p != null)
+  //        {
+  //          switch (p.getPacketType())
+  //          {
+  //            case EEG:
+  //              m_oscSender.send(new OSCMessage("/muse/eeg", getFloats(p)));
+  //              break;
+  //            case QUANTIZATION:
+  //              m_oscSender.send(new OSCMessage("/muse/eeg/quantization", getFloats(p)));
+  //              break;
+  //            //case DROPPED_EEG:
+  //            //  int droppedEeg = (int)p.getValues().get(0).doubleValue();
+  //            //  m_oscSender.send(new OSCMessage("/muse/eeg/dropped_samples", Collections.singleton(droppedEeg)));
+  //            //  break;
+  //            case ACCELEROMETER:
+  //              m_oscSender.send(new OSCMessage("/muse/acc", getFloats(p)));
+  //              break;
+  //            //case DROPPED_ACCELEROMETER:
+  //            //  int droppedAcc = (int)p.getValues().get(0).doubleValue();
+  //            //  m_oscSender.send(new OSCMessage("/muse/acc/dropped_samples", Collections.singleton(droppedAcc)));
+  //            //  break;
+  //            case DRL_REF:
+  //              m_oscSender.send(new OSCMessage("/muse/drlref", getFloats(p)));
+  //              break;
+  //            case HORSESHOE:
+  //              m_oscSender.send(new OSCMessage("/muse/elements/horseshoe", getFloats(p)));
+  //              break;
+  //            //case ARTIFACTS:
+  //            //  m_oscSender.send(new OSCMessage("/muse/drlref", Collections.singleton(1)));
+  //            //  break;
+  //            case ALPHA_RELATIVE:
+  //              m_oscSender.send(new OSCMessage("/muse/elements/alpha_relative", getFloats(p)));
+  //              break;
+  //            case BETA_RELATIVE:
+  //              m_oscSender.send(new OSCMessage("/muse/elements/beta_relative", getFloats(p)));
+  //              break;
+  //            case DELTA_RELATIVE:
+  //              m_oscSender.send(new OSCMessage("/muse/elements/delta_relative", getFloats(p)));
+  //              break;
+  //            case THETA_RELATIVE:
+  //              m_oscSender.send(new OSCMessage("/muse/elements/theta_relative", getFloats(p)));
+  //              break;
+  //            case GAMMA_RELATIVE:
+  //              m_oscSender.send(new OSCMessage("/muse/elements/gamma_relative", getFloats(p)));
+  //              break;
+  //            case ALPHA_ABSOLUTE:
+  //              m_oscSender.send(new OSCMessage("/muse/elements/alpha_absolute", getFloats(p)));
+  //              m_sendList = m_dataProcessor.getFpArousal();
+  //              if (m_sendList != null)
+  //              {
+  //                m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_EMIL));
+  //                m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_GIRALDO_RAMIREZ));
+  //                m_oscSender.send(new OSCMessage("/muse/elements/experimental/arousal_fp", m_sendList));
+  //              }
+  //              m_sendList = m_dataProcessor.getFpValence();
+  //              if (m_sendList != null)
+  //              {
+  //                m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_EMIL));
+  //                m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_GIRALDO_RAMIREZ));
+  //                m_oscSender.send(new OSCMessage("/muse/elements/experimental/valence_fp", m_sendList));
+  //              }
+  //              break;
+  //            case BETA_ABSOLUTE:
+  //              m_oscSender.send(new OSCMessage("/muse/elements/beta_absolute", getFloats(p)));
+  //              m_sendList = m_dataProcessor.getFpArousal();
+  //              if (m_sendList != null)
+  //              {
+  //                m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_EMIL));
+  //                m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_GIRALDO_RAMIREZ));
+  //                m_oscSender.send(new OSCMessage("/muse/elements/experimental/arousal_fp", m_sendList));
+  //              }
+  //              m_sendList = m_dataProcessor.getFpValence();
+  //              if (m_sendList != null)
+  //              {
+  //                m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_EMIL));
+  //                m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_GIRALDO_RAMIREZ));
+  //                m_oscSender.send(new OSCMessage("/muse/elements/experimental/valence_fp", m_sendList));
+  //              }
+  //              break;
+  //            case DELTA_ABSOLUTE:
+  //              m_oscSender.send(new OSCMessage("/muse/elements/delta_absolute", getFloats(p)));
+  //              break;
+  //            case THETA_ABSOLUTE:
+  //              m_oscSender.send(new OSCMessage("/muse/elements/theta_absolute", getFloats(p)));
+  //              break;
+  //            case GAMMA_ABSOLUTE:
+  //              m_oscSender.send(new OSCMessage("/muse/elements/gamma_absolute", getFloats(p)));
+  //              break;
+  //            case ALPHA_SCORE:
+  //              m_oscSender.send(new OSCMessage("/muse/elements/alpha_session_score", getFloats(p)));
+  //              break;
+  //            case BETA_SCORE:
+  //              m_oscSender.send(new OSCMessage("/muse/elements/beta_session_score", getFloats(p)));
+  //              break;
+  //            case DELTA_SCORE:
+  //              m_oscSender.send(new OSCMessage("/muse/elements/delta_session_score", getFloats(p)));
+  //              break;
+  //            case THETA_SCORE:
+  //              m_oscSender.send(new OSCMessage("/muse/elements/theta_session_score", getFloats(p)));
+  //              break;
+  //            case GAMMA_SCORE:
+  //              m_oscSender.send(new OSCMessage("/muse/elements/gamma_session_score", getFloats(p)));
+  //              break;
+  //            case MELLOW:
+  //              m_floats = getFloats(p);
+  //              //m_floats.add(m_dataProcessor.getMellowAvg());
+  //              m_oscSender.send(new OSCMessage("/muse/elements/experimental/mellow", m_floats));
+  //              break;
+  //            case CONCENTRATION:
+  //              m_floats = getFloats(p);
+  //              //m_floats.add(m_dataProcessor.getConcentrationAvg());
+  //              m_oscSender.send(new OSCMessage("/muse/elements/experimental/concentration", m_floats));
+  //              break;
+  //            case BATTERY:
+  //              ArrayList<Object> returnList = new ArrayList<>();
+  //              returnList.add((int)(p.getValues().get(0) * 100));
+  //              returnList.add((int)(double)p.getValues().get(1));
+  //              returnList.add((int)(double)p.getValues().get(1));
+  //              returnList.add((int)(double)p.getValues().get(2));
+  //              m_oscSender.send(new OSCMessage("/muse/batt", returnList));
+  //              break;
+  //
+  //            default:
+  //              break;
+  //          }
+  //        }
+  //        else
+  //        {
+  //          Thread.sleep(1);
+  //        }
+  //      }
+  //      catch (InterruptedException | IOException e)
+  //      {
+  //        Log.e("Muse Headband", e.toString());
+  //      }
+  //    }
+  //  }
+  //
+  //  private ArrayList<Object> getFloats(MuseDataPacket packet)
+  //  {
+  //    ArrayList<Object> returnList = new ArrayList<>();
+  //
+  //    for (double value : packet.getValues())
+  //    {
+  //      returnList.add((float)value);
+  //    }
+  //    return returnList;
+  //  }
+  //
+  //  public synchronized void setSenderRunning(boolean senderRunning)
+  //  {
+  //    m_senderRunning = senderRunning;
+  //  }
+  //
+  //  public String getIpAddress()
+  //  {
+  //    return m_ipAddress;
+  //  }
+  //
+  //  public String getPort()
+  //  {
+  //    return m_port;
+  //  }
+  //}
 
-    public DataOscSender(String ipAddress, int port)
+  class DataLslSender implements Runnable
+  {
+    private int m_chunkCounter = 0;
+    private vectorf floatVector;
+    private volatile boolean m_senderRunning = true;
+    private stream_outlet m_outlet, m_markerOutlet;
+
+    public DataLslSender()
     {
-      try
-      {
-        m_ipAddress = ipAddress;
-        m_port = String.valueOf(port);
-        m_oscSender = new OSCPortOut(InetAddress.getByName(ipAddress), port);
-      }
-      catch (SocketException | UnknownHostException e)
-      {
-        Log.e("OscSender", e.toString());
-      }
+      floatVector = new vectorf();
+      stream_info info = new stream_info("BioSemi", "EEG", 4, 220, channel_format_t.cf_float32, "myuid324457");
+      stream_info markerInfo = new stream_info("BioSemiMarkers", "Markers", 1, 0, channel_format_t.cf_int32, "myuniquesourceid23443");
+      m_outlet = new stream_outlet(info);
+      m_markerOutlet = new stream_outlet(markerInfo);
     }
 
     @Override
@@ -642,316 +842,136 @@ public class MainActivity extends Activity implements OnClickListener
             switch (p.getPacketType())
             {
               case EEG:
-                m_oscSender.send(new OSCMessage("/muse/eeg", getFloats(p)));
+                for (int i = 0; i < p.getValues().size(); i++)
+                {
+                  floatVector.add(p.getValues().get(i).floatValue());
+                }
+                m_chunkCounter++;
+                if (m_chunkCounter == 128)
+                {
+                  m_outlet.push_chunk_multiplexed(floatVector);
+                  m_chunkCounter = 0;
+                  floatVector = new vectorf();
+                }
                 break;
-              case QUANTIZATION:
-                m_oscSender.send(new OSCMessage("/muse/eeg/quantization", getFloats(p)));
-                break;
-              //case DROPPED_EEG:
-              //  int droppedEeg = (int)p.getValues().get(0).doubleValue();
-              //  m_oscSender.send(new OSCMessage("/muse/eeg/dropped_samples", Collections.singleton(droppedEeg)));
+              //case QUANTIZATION:
+              //  m_oscSender.send(new OSCMessage("/muse/eeg/quantization", getFloats(p)));
               //  break;
-              case ACCELEROMETER:
-                m_oscSender.send(new OSCMessage("/muse/acc", getFloats(p)));
-                break;
-              //case DROPPED_ACCELEROMETER:
-              //  int droppedAcc = (int)p.getValues().get(0).doubleValue();
-              //  m_oscSender.send(new OSCMessage("/muse/acc/dropped_samples", Collections.singleton(droppedAcc)));
+              ////case DROPPED_EEG:
+              ////  int droppedEeg = (int)p.getValues().get(0).doubleValue();
+              ////  m_oscSender.send(new OSCMessage("/muse/eeg/dropped_samples", Collections.singleton(droppedEeg)));
+              ////  break;
+              //case ACCELEROMETER:
+              //  m_oscSender.send(new OSCMessage("/muse/acc", getFloats(p)));
               //  break;
-              case DRL_REF:
-                m_oscSender.send(new OSCMessage("/muse/drlref", getFloats(p)));
-                break;
-              case HORSESHOE:
-                m_oscSender.send(new OSCMessage("/muse/elements/horseshoe", getFloats(p)));
-                break;
-              //case ARTIFACTS:
-              //  m_oscSender.send(new OSCMessage("/muse/drlref", Collections.singleton(1)));
+              ////case DROPPED_ACCELEROMETER:
+              ////  int droppedAcc = (int)p.getValues().get(0).doubleValue();
+              ////  m_oscSender.send(new OSCMessage("/muse/acc/dropped_samples", Collections.singleton(droppedAcc)));
+              ////  break;
+              //case DRL_REF:
+              //  m_oscSender.send(new OSCMessage("/muse/drlref", getFloats(p)));
               //  break;
-              case ALPHA_RELATIVE:
-                m_oscSender.send(new OSCMessage("/muse/elements/alpha_relative", getFloats(p)));
-                break;
-              case BETA_RELATIVE:
-                m_oscSender.send(new OSCMessage("/muse/elements/beta_relative", getFloats(p)));
-                break;
-              case DELTA_RELATIVE:
-                m_oscSender.send(new OSCMessage("/muse/elements/delta_relative", getFloats(p)));
-                break;
-              case THETA_RELATIVE:
-                m_oscSender.send(new OSCMessage("/muse/elements/theta_relative", getFloats(p)));
-                break;
-              case GAMMA_RELATIVE:
-                m_oscSender.send(new OSCMessage("/muse/elements/gamma_relative", getFloats(p)));
-                break;
-              case ALPHA_ABSOLUTE:
-                m_oscSender.send(new OSCMessage("/muse/elements/alpha_absolute", getFloats(p)));
-                m_sendList = m_dataProcessor.getFpArousal();
-                if (m_sendList != null)
-                {
-                  m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_EMIL));
-                  m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_GIRALDO_RAMIREZ));
-                  m_oscSender.send(new OSCMessage("/muse/elements/experimental/arousal_fp", m_sendList));
-                }
-                m_sendList = m_dataProcessor.getFpValence();
-                if (m_sendList != null)
-                {
-                  m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_EMIL));
-                  m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_GIRALDO_RAMIREZ));
-                  m_oscSender.send(new OSCMessage("/muse/elements/experimental/valence_fp", m_sendList));
-                }
-                break;
-              case BETA_ABSOLUTE:
-                m_oscSender.send(new OSCMessage("/muse/elements/beta_absolute", getFloats(p)));
-                m_sendList = m_dataProcessor.getFpArousal();
-                if (m_sendList != null)
-                {
-                  m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_EMIL));
-                  m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_GIRALDO_RAMIREZ));
-                  m_oscSender.send(new OSCMessage("/muse/elements/experimental/arousal_fp", m_sendList));
-                }
-                m_sendList = m_dataProcessor.getFpValence();
-                if (m_sendList != null)
-                {
-                  m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_EMIL));
-                  m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_GIRALDO_RAMIREZ));
-                  m_oscSender.send(new OSCMessage("/muse/elements/experimental/valence_fp", m_sendList));
-                }
-                break;
-              case DELTA_ABSOLUTE:
-                m_oscSender.send(new OSCMessage("/muse/elements/delta_absolute", getFloats(p)));
-                break;
-              case THETA_ABSOLUTE:
-                m_oscSender.send(new OSCMessage("/muse/elements/theta_absolute", getFloats(p)));
-                break;
-              case GAMMA_ABSOLUTE:
-                m_oscSender.send(new OSCMessage("/muse/elements/gamma_absolute", getFloats(p)));
-                break;
-              case ALPHA_SCORE:
-                m_oscSender.send(new OSCMessage("/muse/elements/alpha_session_score", getFloats(p)));
-                break;
-              case BETA_SCORE:
-                m_oscSender.send(new OSCMessage("/muse/elements/beta_session_score", getFloats(p)));
-                break;
-              case DELTA_SCORE:
-                m_oscSender.send(new OSCMessage("/muse/elements/delta_session_score", getFloats(p)));
-                break;
-              case THETA_SCORE:
-                m_oscSender.send(new OSCMessage("/muse/elements/theta_session_score", getFloats(p)));
-                break;
-              case GAMMA_SCORE:
-                m_oscSender.send(new OSCMessage("/muse/elements/gamma_session_score", getFloats(p)));
-                break;
-              case MELLOW:
-                m_floats = getFloats(p);
-                //m_floats.add(m_dataProcessor.getMellowAvg());
-                m_oscSender.send(new OSCMessage("/muse/elements/experimental/mellow", m_floats));
-                break;
-              case CONCENTRATION:
-                m_floats = getFloats(p);
-                //m_floats.add(m_dataProcessor.getConcentrationAvg());
-                m_oscSender.send(new OSCMessage("/muse/elements/experimental/concentration", m_floats));
-                break;
-              case BATTERY:
-                ArrayList<Object> returnList = new ArrayList<>();
-                returnList.add((int)(p.getValues().get(0) * 100));
-                returnList.add((int)(double)p.getValues().get(1));
-                returnList.add((int)(double)p.getValues().get(1));
-                returnList.add((int)(double)p.getValues().get(2));
-                m_oscSender.send(new OSCMessage("/muse/batt", returnList));
-                break;
+              //case HORSESHOE:
+              //  m_oscSender.send(new OSCMessage("/muse/elements/horseshoe", getFloats(p)));
+              //  break;
+              ////case ARTIFACTS:
+              ////  m_oscSender.send(new OSCMessage("/muse/drlref", Collections.singleton(1)));
+              ////  break;
+              //case ALPHA_RELATIVE:
+              //  m_oscSender.send(new OSCMessage("/muse/elements/alpha_relative", getFloats(p)));
+              //  break;
+              //case BETA_RELATIVE:
+              //  m_oscSender.send(new OSCMessage("/muse/elements/beta_relative", getFloats(p)));
+              //  break;
+              //case DELTA_RELATIVE:
+              //  m_oscSender.send(new OSCMessage("/muse/elements/delta_relative", getFloats(p)));
+              //  break;
+              //case THETA_RELATIVE:
+              //  m_oscSender.send(new OSCMessage("/muse/elements/theta_relative", getFloats(p)));
+              //  break;
+              //case GAMMA_RELATIVE:
+              //  m_oscSender.send(new OSCMessage("/muse/elements/gamma_relative", getFloats(p)));
+              //  break;
+              //case ALPHA_ABSOLUTE:
+              //  m_oscSender.send(new OSCMessage("/muse/elements/alpha_absolute", getFloats(p)));
+              //  m_sendList = m_dataProcessor.getFpArousal();
+              //  if (m_sendList != null)
+              //  {
+              //    m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_EMIL));
+              //    m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_GIRALDO_RAMIREZ));
+              //    m_oscSender.send(new OSCMessage("/muse/elements/experimental/arousal_fp", m_sendList));
+              //  }
+              //  m_sendList = m_dataProcessor.getFpValence();
+              //  if (m_sendList != null)
+              //  {
+              //    m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_EMIL));
+              //    m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_GIRALDO_RAMIREZ));
+              //    m_oscSender.send(new OSCMessage("/muse/elements/experimental/valence_fp", m_sendList));
+              //  }
+              //  break;
+              //case BETA_ABSOLUTE:
+              //  m_oscSender.send(new OSCMessage("/muse/elements/beta_absolute", getFloats(p)));
+              //  m_sendList = m_dataProcessor.getFpArousal();
+              //  if (m_sendList != null)
+              //  {
+              //    m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_EMIL));
+              //    m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_GIRALDO_RAMIREZ));
+              //    m_oscSender.send(new OSCMessage("/muse/elements/experimental/arousal_fp", m_sendList));
+              //  }
+              //  m_sendList = m_dataProcessor.getFpValence();
+              //  if (m_sendList != null)
+              //  {
+              //    m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_EMIL));
+              //    m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_GIRALDO_RAMIREZ));
+              //    m_oscSender.send(new OSCMessage("/muse/elements/experimental/valence_fp", m_sendList));
+              //  }
+              //  break;
+              //case DELTA_ABSOLUTE:
+              //  m_oscSender.send(new OSCMessage("/muse/elements/delta_absolute", getFloats(p)));
+              //  break;
+              //case THETA_ABSOLUTE:
+              //  m_oscSender.send(new OSCMessage("/muse/elements/theta_absolute", getFloats(p)));
+              //  break;
+              //case GAMMA_ABSOLUTE:
+              //  m_oscSender.send(new OSCMessage("/muse/elements/gamma_absolute", getFloats(p)));
+              //  break;
+              //case ALPHA_SCORE:
+              //  m_oscSender.send(new OSCMessage("/muse/elements/alpha_session_score", getFloats(p)));
+              //  break;
+              //case BETA_SCORE:
+              //  m_oscSender.send(new OSCMessage("/muse/elements/beta_session_score", getFloats(p)));
+              //  break;
+              //case DELTA_SCORE:
+              //  m_oscSender.send(new OSCMessage("/muse/elements/delta_session_score", getFloats(p)));
+              //  break;
+              //case THETA_SCORE:
+              //  m_oscSender.send(new OSCMessage("/muse/elements/theta_session_score", getFloats(p)));
+              //  break;
+              //case GAMMA_SCORE:
+              //  m_oscSender.send(new OSCMessage("/muse/elements/gamma_session_score", getFloats(p)));
+              //  break;
+              //case MELLOW:
+              //  m_floats = getFloats(p);
+              //  //m_floats.add(m_dataProcessor.getMellowAvg());
+              //  m_oscSender.send(new OSCMessage("/muse/elements/experimental/mellow", m_floats));
+              //  break;
+              //case CONCENTRATION:
+              //  m_floats = getFloats(p);
+              //  //m_floats.add(m_dataProcessor.getConcentrationAvg());
+              //  m_oscSender.send(new OSCMessage("/muse/elements/experimental/concentration", m_floats));
+              //  break;
+              //case BATTERY:
+              //  ArrayList<Object> returnList = new ArrayList<>();
+              //  returnList.add((int)(p.getValues().get(0) * 100));
+              //  returnList.add((int)(double)p.getValues().get(1));
+              //  returnList.add((int)(double)p.getValues().get(1));
+              //  returnList.add((int)(double)p.getValues().get(2));
+              //  m_oscSender.send(new OSCMessage("/muse/batt", returnList));
+              //  break;
 
               default:
                 break;
             }
-          }
-          else
-          {
-            Thread.sleep(1);
-          }
-        }
-        catch (InterruptedException | IOException e)
-        {
-          Log.e("Muse Headband", e.toString());
-        }
-      }
-    }
-
-    private ArrayList<Object> getFloats(MuseDataPacket packet)
-    {
-      ArrayList<Object> returnList = new ArrayList<>();
-
-      for (double value : packet.getValues())
-      {
-        returnList.add((float)value);
-      }
-      return returnList;
-    }
-
-    public synchronized void setSenderRunning(boolean senderRunning)
-    {
-      m_senderRunning = senderRunning;
-    }
-
-    public String getIpAddress()
-    {
-      return m_ipAddress;
-    }
-
-    public String getPort()
-    {
-      return m_port;
-    }
-  }
-
-  class DataLslSender implements Runnable
-  {
-    private volatile boolean m_senderRunning = true;
-    private StreamOutlet m_outlet;
-    protected String m_ipAddress, m_port;
-    private ArrayList<Object> m_floats;
-    private float[] sample = new float[8];
-
-    public DataLslSender(String ipAddress, int port)
-    {
-      m_lsl = new LslAndroidJNI();
-      StreamInfo info = new StreamInfo("BioSemi", "EEG", 8, 100, ChannelFormatT.cf_float32, "myuid324457");
-      m_outlet = new StreamOutlet(info);
-      m_ipAddress = ipAddress;
-      m_port = String.valueOf(port);
-    }
-
-    @Override
-    public void run()
-    {
-      while (m_senderRunning)
-      {
-        try
-        {
-          MuseDataPacket p = m_dataQueue.poll();
-          if (p != null)
-          {
-            //switch (p.getPacketType())
-            //{
-            //  case EEG:
-            //    m_oscSender.send(new OSCMessage("/muse/eeg", getFloats(p)));
-            //    break;
-            //  case QUANTIZATION:
-            //    m_oscSender.send(new OSCMessage("/muse/eeg/quantization", getFloats(p)));
-            //    break;
-            //  //case DROPPED_EEG:
-            //  //  int droppedEeg = (int)p.getValues().get(0).doubleValue();
-            //  //  m_oscSender.send(new OSCMessage("/muse/eeg/dropped_samples", Collections.singleton(droppedEeg)));
-            //  //  break;
-            //  case ACCELEROMETER:
-            //    m_oscSender.send(new OSCMessage("/muse/acc", getFloats(p)));
-            //    break;
-            //  //case DROPPED_ACCELEROMETER:
-            //  //  int droppedAcc = (int)p.getValues().get(0).doubleValue();
-            //  //  m_oscSender.send(new OSCMessage("/muse/acc/dropped_samples", Collections.singleton(droppedAcc)));
-            //  //  break;
-            //  case DRL_REF:
-            //    m_oscSender.send(new OSCMessage("/muse/drlref", getFloats(p)));
-            //    break;
-            //  case HORSESHOE:
-            //    m_oscSender.send(new OSCMessage("/muse/elements/horseshoe", getFloats(p)));
-            //    break;
-            //  //case ARTIFACTS:
-            //  //  m_oscSender.send(new OSCMessage("/muse/drlref", Collections.singleton(1)));
-            //  //  break;
-            //  case ALPHA_RELATIVE:
-            //    m_oscSender.send(new OSCMessage("/muse/elements/alpha_relative", getFloats(p)));
-            //    break;
-            //  case BETA_RELATIVE:
-            //    m_oscSender.send(new OSCMessage("/muse/elements/beta_relative", getFloats(p)));
-            //    break;
-            //  case DELTA_RELATIVE:
-            //    m_oscSender.send(new OSCMessage("/muse/elements/delta_relative", getFloats(p)));
-            //    break;
-            //  case THETA_RELATIVE:
-            //    m_oscSender.send(new OSCMessage("/muse/elements/theta_relative", getFloats(p)));
-            //    break;
-            //  case GAMMA_RELATIVE:
-            //    m_oscSender.send(new OSCMessage("/muse/elements/gamma_relative", getFloats(p)));
-            //    break;
-            //  case ALPHA_ABSOLUTE:
-            //    m_oscSender.send(new OSCMessage("/muse/elements/alpha_absolute", getFloats(p)));
-            //    m_sendList = m_dataProcessor.getFpArousal();
-            //    if (m_sendList != null)
-            //    {
-            //      m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_EMIL));
-            //      m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_GIRALDO_RAMIREZ));
-            //      m_oscSender.send(new OSCMessage("/muse/elements/experimental/arousal_fp", m_sendList));
-            //    }
-            //    m_sendList = m_dataProcessor.getFpValence();
-            //    if (m_sendList != null)
-            //    {
-            //      m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_EMIL));
-            //      m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_GIRALDO_RAMIREZ));
-            //      m_oscSender.send(new OSCMessage("/muse/elements/experimental/valence_fp", m_sendList));
-            //    }
-            //    break;
-            //  case BETA_ABSOLUTE:
-            //    m_oscSender.send(new OSCMessage("/muse/elements/beta_absolute", getFloats(p)));
-            //    m_sendList = m_dataProcessor.getFpArousal();
-            //    if (m_sendList != null)
-            //    {
-            //      m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_EMIL));
-            //      m_sendList.add(m_dataProcessor.getDataFilterValue(AROUSAL_GIRALDO_RAMIREZ));
-            //      m_oscSender.send(new OSCMessage("/muse/elements/experimental/arousal_fp", m_sendList));
-            //    }
-            //    m_sendList = m_dataProcessor.getFpValence();
-            //    if (m_sendList != null)
-            //    {
-            //      m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_EMIL));
-            //      m_sendList.add(m_dataProcessor.getDataFilterValue(VALENCE_GIRALDO_RAMIREZ));
-            //      m_oscSender.send(new OSCMessage("/muse/elements/experimental/valence_fp", m_sendList));
-            //    }
-            //    break;
-            //  case DELTA_ABSOLUTE:
-            //    m_oscSender.send(new OSCMessage("/muse/elements/delta_absolute", getFloats(p)));
-            //    break;
-            //  case THETA_ABSOLUTE:
-            //    m_oscSender.send(new OSCMessage("/muse/elements/theta_absolute", getFloats(p)));
-            //    break;
-            //  case GAMMA_ABSOLUTE:
-            //    m_oscSender.send(new OSCMessage("/muse/elements/gamma_absolute", getFloats(p)));
-            //    break;
-            //  case ALPHA_SCORE:
-            //    m_oscSender.send(new OSCMessage("/muse/elements/alpha_session_score", getFloats(p)));
-            //    break;
-            //  case BETA_SCORE:
-            //    m_oscSender.send(new OSCMessage("/muse/elements/beta_session_score", getFloats(p)));
-            //    break;
-            //  case DELTA_SCORE:
-            //    m_oscSender.send(new OSCMessage("/muse/elements/delta_session_score", getFloats(p)));
-            //    break;
-            //  case THETA_SCORE:
-            //    m_oscSender.send(new OSCMessage("/muse/elements/theta_session_score", getFloats(p)));
-            //    break;
-            //  case GAMMA_SCORE:
-            //    m_oscSender.send(new OSCMessage("/muse/elements/gamma_session_score", getFloats(p)));
-            //    break;
-            //  case MELLOW:
-            //    m_floats = getFloats(p);
-            //    //m_floats.add(m_dataProcessor.getMellowAvg());
-            //    m_oscSender.send(new OSCMessage("/muse/elements/experimental/mellow", m_floats));
-            //    break;
-            //  case CONCENTRATION:
-            //    m_floats = getFloats(p);
-            //    //m_floats.add(m_dataProcessor.getConcentrationAvg());
-            //    m_oscSender.send(new OSCMessage("/muse/elements/experimental/concentration", m_floats));
-            //    break;
-            //  case BATTERY:
-            //    ArrayList<Object> returnList = new ArrayList<>();
-            //    returnList.add((int)(p.getValues().get(0) * 100));
-            //    returnList.add((int)(double)p.getValues().get(1));
-            //    returnList.add((int)(double)p.getValues().get(1));
-            //    returnList.add((int)(double)p.getValues().get(2));
-            //    m_oscSender.send(new OSCMessage("/muse/batt", returnList));
-            //    break;
-            //
-            //  default:
-            //    break;
-            //}
           }
           else
           {
@@ -979,16 +999,6 @@ public class MainActivity extends Activity implements OnClickListener
     public synchronized void setSenderRunning(boolean senderRunning)
     {
       m_senderRunning = senderRunning;
-    }
-
-    public String getIpAddress()
-    {
-      return m_ipAddress;
-    }
-
-    public String getPort()
-    {
-      return m_port;
     }
   }
 
@@ -1020,24 +1030,24 @@ public class MainActivity extends Activity implements OnClickListener
       try
       {
         m_dataQueue.put(p);
-        ArrayList<Double> values = p.getValues();
-        switch (p.getPacketType())
-        {
-          case ALPHA_ABSOLUTE:
-            m_dataProcessor.putAlphaFp(new Float[]{values.get(Eeg.FP1.ordinal()).floatValue(), values.get(Eeg.FP2.ordinal()).floatValue()});
-            break;
-          case BETA_ABSOLUTE:
-            m_dataProcessor.putBetaFp(new Float[]{values.get(Eeg.FP1.ordinal()).floatValue(), values.get(Eeg.FP2.ordinal()).floatValue()});
-            break;
-          //case MELLOW:
-          //  m_dataProcessor.putDataFilterValue(MELLOW, values.get(0).floatValue());
-          //  break;
-          //case CONCENTRATION:
-          //  m_dataProcessor.putDataFilterValue(CONCENTRATION, values.get(0).floatValue());
-          //  break;
-          default:
-            break;
-        }
+        //ArrayList<Double> values = p.getValues();
+        //switch (p.getPacketType())
+        //{
+        //  case ALPHA_ABSOLUTE:
+        //    m_dataProcessor.putAlphaFp(new Float[]{values.get(Eeg.FP1.ordinal()).floatValue(), values.get(Eeg.FP2.ordinal()).floatValue()});
+        //    break;
+        //  case BETA_ABSOLUTE:
+        //    m_dataProcessor.putBetaFp(new Float[]{values.get(Eeg.FP1.ordinal()).floatValue(), values.get(Eeg.FP2.ordinal()).floatValue()});
+        //    break;
+        //  //case MELLOW:
+        //  //  m_dataProcessor.putDataFilterValue(MELLOW, values.get(0).floatValue());
+        //  //  break;
+        //  //case CONCENTRATION:
+        //  //  m_dataProcessor.putDataFilterValue(CONCENTRATION, values.get(0).floatValue());
+        //  //  break;
+        //  default:
+        //    break;
+        //}
       }
       catch (InterruptedException e)
       {

@@ -25,6 +25,7 @@
     <content url="file://$MODULE_DIR$">
       <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/gen" isTestSource="false" generated="true" />
+      <sourceFolder url="file://$MODULE_DIR$/test" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/.idea" />
       <excludeFolder url="file://$MODULE_DIR$/.settings" />
     </content>
@@ -40,5 +41,6 @@
       </library>
     </orderEntry>
     <orderEntry type="module" module-name="javaosc-core" />
+    <orderEntry type="library" scope="TEST" name="jna-4.0.0" level="project" />
   </component>
 </module>
