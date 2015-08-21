@@ -6,14 +6,9 @@ package com.interaxon.test.libmuse;
 
 import java.io.IOException;
 import java.lang.ref.WeakReference;
-import java.net.InetAddress;
-import java.net.SocketException;
-import java.net.UnknownHostException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -39,10 +34,7 @@ import com.example.hellojni.channel_format_t;
 import com.example.hellojni.stream_info;
 import com.example.hellojni.stream_outlet;
 import com.example.hellojni.vectorf;
-import com.illposed.osc.OSCMessage;
-import com.illposed.osc.OSCPortOut;
 import com.interaxon.libmuse.ConnectionState;
-import com.interaxon.libmuse.Eeg;
 import com.interaxon.libmuse.LibMuseVersion;
 import com.interaxon.libmuse.Muse;
 import com.interaxon.libmuse.MuseArtifactPacket;
@@ -68,7 +60,8 @@ import com.interaxon.test.libmuse.filters.NormalizeMeanFilter;
  */
 public class MainActivity extends Activity implements OnClickListener
 {
-  //private static LslAndroidJNI m_lsl = new LslAndroidJNI();
+  public static int BLOCK_SENT_SIZE = 256;
+
   static
   {
     System.loadLibrary("lslAndroid");
@@ -847,7 +840,8 @@ public class MainActivity extends Activity implements OnClickListener
                   floatVector.add(p.getValues().get(i).floatValue());
                 }
                 m_chunkCounter++;
-                if (m_chunkCounter == 128)
+
+                if (m_chunkCounter == BLOCK_SENT_SIZE)
                 {
                   m_outlet.push_chunk_multiplexed(floatVector);
                   m_chunkCounter = 0;
