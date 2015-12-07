@@ -7,6 +7,7 @@ package com.interaxon.test.libmuse;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.ref.WeakReference;
+import java.net.Socket;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
@@ -66,14 +67,18 @@ public class MainActivity extends Activity implements OnClickListener
 {
   private static final Pattern PARTIAl_IP_ADDRESS =
       Pattern.compile("^((25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[0-9])\\.){0,3}((25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[0-9])){0,1}$");
+  public static int BATCH_NUM = 500;
   protected ExecutorService m_queryThreadExecutor = Executors.newSingleThreadExecutor();
   private Muse muse = null;
+  final Object LOCK = new Object();
   private ConnectionListener connectionListener = null;
   private DataListener dataListener = null;
   private boolean dataTransmission = true;
   private Handler mHandler = null;
   //private File m_observationsFile;
   private KeyStore m_keystore;
+  //private SSLSocket m_socket;
+  private Socket m_socket;
   private PowerManager.WakeLock m_wakeLock;
   private EditText m_ipAddressEditText, m_portEditText;
   private TextView m_sendLocationsText;
@@ -184,7 +189,13 @@ public class MainActivity extends Activity implements OnClickListener
   {
     super.onStop();
     mHandler.getLooper().quit();
-    m_wakeLock.release();
+    synchronized (LOCK)
+    {
+      if (m_wakeLock.isHeld())
+      {
+        m_wakeLock.release();
+      }
+    }
   }
 
   @Override
@@ -192,7 +203,13 @@ public class MainActivity extends Activity implements OnClickListener
   {
     super.onDestroy();
     mHandler.getLooper().quit();
-    m_wakeLock.release();
+    synchronized (LOCK)
+    {
+      if (m_wakeLock.isHeld())
+      {
+        m_wakeLock.release();
+      }
+    }
   }
 
   @Override
@@ -242,7 +259,14 @@ public class MainActivity extends Activity implements OnClickListener
         try
         {
           muse.runAsynchronously();
-          m_wakeLock.acquire();
+          synchronized (LOCK)
+          {
+            if (!m_wakeLock.isHeld())
+            {
+              m_wakeLock.acquire();
+            }
+          }
+
         }
         catch (Exception e)
         {
@@ -264,7 +288,14 @@ public class MainActivity extends Activity implements OnClickListener
          * muse.disconnect(false);
          */
         muse.disconnect(true);
-        m_wakeLock.release();
+
+        synchronized (LOCK)
+        {
+          if (m_wakeLock.isHeld())
+          {
+            m_wakeLock.release();
+          }
+        }
       }
     }
     else if (v.getId() == R.id.pause)
@@ -295,13 +326,13 @@ public class MainActivity extends Activity implements OnClickListener
     muse.registerConnectionListener(connectionListener);
     muse.registerDataListener(dataListener, MuseDataPacketType.EEG);
     //muse.registerDataListener(dataListener, MuseDataPacketType.DROPPED_EEG);
-    //muse.registerDataListener(dataListener, MuseDataPacketType.QUANTIZATION);
-    //muse.registerDataListener(dataListener, MuseDataPacketType.ACCELEROMETER);
+    muse.registerDataListener(dataListener, MuseDataPacketType.QUANTIZATION);
+    muse.registerDataListener(dataListener, MuseDataPacketType.ACCELEROMETER);
     //muse.registerDataListener(dataListener, MuseDataPacketType.DROPPED_ACCELEROMETER);
     muse.registerDataListener(dataListener, MuseDataPacketType.ARTIFACTS);
     //muse.registerDataListener(dataListener, MuseDataPacketType.DRL_REF);
-    muse.registerDataListener(dataListener, MuseDataPacketType.HORSESHOE);
-    muse.registerDataListener(dataListener, MuseDataPacketType.BATTERY);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.HORSESHOE);
+    //muse.registerDataListener(dataListener, MuseDataPacketType.BATTERY);
     //muse.registerDataListener(dataListener, MuseDataPacketType.ALPHA_RELATIVE);
     //muse.registerDataListener(dataListener, MuseDataPacketType.BETA_RELATIVE);
     //muse.registerDataListener(dataListener, MuseDataPacketType.DELTA_RELATIVE);
@@ -319,7 +350,7 @@ public class MainActivity extends Activity implements OnClickListener
     //muse.registerDataListener(dataListener, MuseDataPacketType.GAMMA_SCORE);
     muse.registerDataListener(dataListener, MuseDataPacketType.MELLOW);
     muse.registerDataListener(dataListener, MuseDataPacketType.CONCENTRATION);
-    muse.setPreset(MusePreset.PRESET_12);
+    muse.setPreset(MusePreset.PRESET_10);
     muse.enableDataTransmission(dataTransmission);
   }
 
@@ -453,20 +484,24 @@ public class MainActivity extends Activity implements OnClickListener
       {
         values.add(Double.toString(val));
       }
+      long timestamp = p.getTimestamp();
       m_builder.addObservations(
           ZephyrProtos.ObservationPB.newBuilder()
               .setName(p.getPacketType().toString())
               .setUnit("")
-              .setTime(p.getTimestamp() / 1000)
+              .setTime(timestamp == 0 ? System.currentTimeMillis() : timestamp / 1000)
               .addAllValues(values)
       );
 
-      if (m_builder.getObservationsCount() >= 500)
+
+      if (m_builder.getObservationsCount() >= BATCH_NUM)
       {
+        String ipAddress = m_ipAddressEditText.getText().toString();
+        Integer port = Integer.parseInt(m_portEditText.getText().toString());
         NetworkInfo activeNetInfo = m_connManager.getActiveNetworkInfo();
         if ("WIFI".equals(activeNetInfo.getTypeName()))
         {
-          m_queryThreadExecutor.execute(new RemoteClientSaveWorker(m_builder.build(), m_keystore));
+          m_queryThreadExecutor.execute(new RemoteClientSaveWorker(m_builder.build(), m_socket, ipAddress, port));
           m_builder.clear();
         }
       }
@@ -480,9 +515,9 @@ public class MainActivity extends Activity implements OnClickListener
         m_builder.addObservations(
             ZephyrProtos.ObservationPB.newBuilder()
                 .setName("ARTIFACTS")
-                .setUnit("")
+                .setUnit("blink")
                 .setTime(System.currentTimeMillis())
-                .addValues("blink")
+                .addValues("1")
         );
       }
       if (p.getJawClench())
@@ -490,18 +525,20 @@ public class MainActivity extends Activity implements OnClickListener
         m_builder.addObservations(
             ZephyrProtos.ObservationPB.newBuilder()
                 .setName("ARTIFACTS")
-                .setUnit("")
+                .setUnit("jaw")
                 .setTime(System.currentTimeMillis())
-                .addValues("jaw")
+                .addValues("1")
         );
       }
 
-      if (m_builder.getObservationsCount() >= 500)
+      if (m_builder.getObservationsCount() >= BATCH_NUM)
       {
+        String ipAddress = m_ipAddressEditText.getText().toString();
+        Integer port = Integer.parseInt(m_portEditText.getText().toString());
         NetworkInfo activeNetInfo = m_connManager.getActiveNetworkInfo();
         if ("WIFI".equals(activeNetInfo.getTypeName()))
         {
-          m_queryThreadExecutor.execute(new RemoteClientSaveWorker(m_builder.build(), m_keystore));
+          m_queryThreadExecutor.execute(new RemoteClientSaveWorker(m_builder.build(), m_socket, ipAddress, port));
           m_builder.clear();
         }
       }

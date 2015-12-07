@@ -11,7 +11,6 @@ import eu.fistar.sdcs.pa.ZephyrProtos;
  */
 public class LocalClientSaveWorker extends ClientWorker
 {
-  private FileOutputStream m_fileOutputStream;
   private File m_observationsFile;
 
   public LocalClientSaveWorker(File observationsFile, ZephyrProtos.ObservationsPB observations)
@@ -23,8 +22,11 @@ public class LocalClientSaveWorker extends ClientWorker
   @Override
   OutputStream getOutputStream() throws Exception
   {
-    m_fileOutputStream = new FileOutputStream(m_observationsFile, true);
-    return m_fileOutputStream;
+    if (m_outputStream == null)
+    {
+      m_outputStream = new FileOutputStream(m_observationsFile, true);
+    }
+    return m_outputStream;
   }
 
   @Override
@@ -34,8 +36,7 @@ public class LocalClientSaveWorker extends ClientWorker
   }
 
   @Override
-  protected void close() throws Exception
+  public void close() throws Exception
   {
-    m_fileOutputStream.close();
   }
 }
