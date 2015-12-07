@@ -4,26 +4,41 @@
 
 package com.interaxon.test.libmuse;
 
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.ref.WeakReference;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.security.KeyStore;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.CertificateException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.regex.Pattern;
 
 import android.app.Activity;
+import android.content.Context;
+import android.content.res.AssetManager;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.util.Log;
@@ -54,39 +69,43 @@ import com.interaxon.libmuse.MuseVersion;
 import com.interaxon.test.libmuse.filters.IDataFilter;
 import com.interaxon.test.libmuse.filters.MeanFilter;
 import com.interaxon.test.libmuse.filters.NormalizeMeanFilter;
+import com.interaxon.test.libmuse.runnable.LocalClientSaveWorker;
+import com.interaxon.test.libmuse.runnable.RemoteClientSaveWorker;
+import eu.fistar.sdcs.pa.ZephyrProtos;
 
 /**
- * In this simple example MainActivity implements 2 MuseHeadband listeners and updates UI when data from Muse is received. Similarly you can implement listers for other data or
- * register same listener to listen for different type of data. For simplicity we create Listeners as inner classes of MainActivity. We pass reference to MainActivity as we want
- * listeners to update UI thread in this example app. You can also connect multiple muses to the same phone and register same listener to listen for data from different muses. In
- * this case you will have to provide synchronization for data members you are using inside your listener. Usage instructions: 1. Enable bluetooth on your device 2. Pair your
- * device with muse 3. Run this project 4. Press Refresh. It should display all paired Muses in Spinner 5. Make sure Muse headband is waiting for connection and press connect. It
- * may take up to 10 sec in some cases. 6. You should see EEG and accelerometer data as well as connection status, Version information and MuseElements (alpha, beta, theta, delta,
- * gamma waves) on the screen.
+ * In this simple example MainActivity implements 2 MuseHeadband listeners and updates UI when data from Muse is received. Similarly you can implement listers for
+ * other data or register same listener to listen for different type of data. For simplicity we create Listeners as inner classes of MainActivity. We pass reference
+ * to MainActivity as we want listeners to update UI thread in this example app. You can also connect multiple muses to the same phone and register same listener to
+ * listen for data from different muses. In this case you will have to provide synchronization for data members you are using inside your listener. Usage
+ * instructions: 1. Enable bluetooth on your device 2. Pair your device with muse 3. Run this project 4. Press Refresh. It should display all paired Muses in Spinner
+ * 5. Make sure Muse headband is waiting for connection and press connect. It may take up to 10 sec in some cases. 6. You should see EEG and accelerometer data as
+ * well as connection status, Version information and MuseElements (alpha, beta, theta, delta, gamma waves) on the screen.
  */
 public class MainActivity extends Activity implements OnClickListener
 {
   private static final Pattern PARTIAl_IP_ADDRESS =
       Pattern.compile("^((25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[0-9])\\.){0,3}((25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[0-9])){0,1}$");
   private static String OSC_SENDERS = "OSC_SENDERS";
+  protected ExecutorService m_queryThreadExecutor = Executors.newSingleThreadExecutor();
   private Muse muse = null;
   private ConnectionListener connectionListener = null;
   private DataListener dataListener = null;
   private boolean dataTransmission = true;
-  private final BlockingQueue<MuseDataPacket> m_dataQueue;
+  private final BlockingQueue<Object> m_dataQueue;
   private final Object m_dataQueueLock = new Object();
   private Handler mHandler = null;
-  private Map<String, DataOscSender> m_dataOscSenderMap;
-  private final DataProcessor m_dataProcessor;
-
+  private Map<String, DataSender> m_dataSenderMap;
+  //private File m_observationsFile;
+  private KeyStore m_keystore;
+  private PowerManager.WakeLock m_wakeLock;
   private EditText m_ipAddressEditText, m_portEditText;
   private TextView m_sendLocationsText;
 
   public MainActivity()
   {
     m_dataQueue = new LinkedBlockingQueue<>();
-    m_dataProcessor = new DataProcessor();
-    m_dataOscSenderMap = new HashMap<>();
+    m_dataSenderMap = new HashMap<>();
 
     // Create listeners and pass reference to activity to them
     WeakReference<Activity> weakActivity = new WeakReference<Activity>(this);
@@ -101,6 +120,10 @@ public class MainActivity extends Activity implements OnClickListener
   {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_main);
+    //m_observationsFile = new File(getFilesDir(), "observations.dat");
+    PowerManager m_pwrManager = (PowerManager)getSystemService(Context.POWER_SERVICE);
+    m_wakeLock = m_pwrManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MyWakeLock");
+
     Button refreshButton = (Button)findViewById(R.id.refresh);
     refreshButton.setOnClickListener(this);
     Button connectButton = (Button)findViewById(R.id.connect);
@@ -142,9 +165,33 @@ public class MainActivity extends Activity implements OnClickListener
       }
     });
 
-    if (m_dataOscSenderMap == null)
+    if (m_dataSenderMap == null)
     {
-      m_dataOscSenderMap = new HashMap<>();
+      m_dataSenderMap = new HashMap<>();
+    }
+
+    try
+    {
+      AssetManager assetMgr = getAssets();
+      InputStream clientJksInputStream = assetMgr.open("client.bks");
+      m_keystore = KeyStore.getInstance("BKS");
+      m_keystore.load(clientJksInputStream, "klient1".toCharArray());
+    }
+    catch (IOException e)
+    {
+      e.printStackTrace();
+    }
+    catch (KeyStoreException e)
+    {
+      e.printStackTrace();
+    }
+    catch (NoSuchAlgorithmException e)
+    {
+      e.printStackTrace();
+    }
+    catch (CertificateException e)
+    {
+      e.printStackTrace();
     }
 
     if (savedInstanceState != null)
@@ -154,19 +201,13 @@ public class MainActivity extends Activity implements OnClickListener
       {
         String ipAddress = list.get(i);
         Integer port = Integer.valueOf(list.get(i + 1));
-        DataOscSender oscSender = new DataOscSender(ipAddress, port); //todo put processor into stop/pause/kill logic stream
-        m_dataOscSenderMap.put(ipAddress, oscSender);
+        DataSender oscSender = new DataSender(ipAddress, port); //todo put processor into stop/pause/kill logic stream
+        m_dataSenderMap.put(ipAddress, oscSender);
         if (muse != null && muse.getConnectionState() == ConnectionState.CONNECTED && dataTransmission)
         {
           new Thread(oscSender).start();
           m_sendLocationsText.append(ipAddress + ":" + port + "\n");
         }
-      }
-
-      if (list.size() > 0)
-      {
-        m_dataProcessor.setRunning(true);
-        new Thread(m_dataProcessor).start();
       }
     }
     Log.i("Muse Headband", "libmuse version=" + LibMuseVersion.SDK_VERSION);
@@ -177,7 +218,7 @@ public class MainActivity extends Activity implements OnClickListener
   {
     super.onSaveInstanceState(outState);
     ArrayList<String> senders = new ArrayList<>();
-    for (DataOscSender sender : m_dataOscSenderMap.values())
+    for (DataSender sender : m_dataSenderMap.values())
     {
       senders.add(sender.getIpAddress());
       senders.add(sender.getPort());
@@ -187,14 +228,13 @@ public class MainActivity extends Activity implements OnClickListener
 
   private void closeSendersAndProcessors()
   {
-    for (Iterator<DataOscSender> iter = m_dataOscSenderMap.values().iterator(); iter.hasNext(); )
+    for (Iterator<DataSender> iter = m_dataSenderMap.values().iterator(); iter.hasNext(); )
     {
-      DataOscSender sender = iter.next();
+      DataSender sender = iter.next();
       sender.setSenderRunning(false);
       iter.remove();
     }
 
-    m_dataProcessor.setRunning(false);
     m_sendLocationsText.setText("");
   }
 
@@ -304,17 +344,11 @@ public class MainActivity extends Activity implements OnClickListener
     {
       String ipAddress = m_ipAddressEditText.getText().toString();
       Integer port = Integer.parseInt(m_portEditText.getText().toString());
-      DataOscSender dataOscSender = new DataOscSender(ipAddress, port);
-      m_dataOscSenderMap.put(ipAddress, dataOscSender);
-      new Thread(dataOscSender).start();
+      DataSender dataSender = new DataSender(ipAddress, port);
+      m_dataSenderMap.put(ipAddress, dataSender);
+      new Thread(dataSender).start();
 
-      if (!m_dataProcessor.isRunning())
-      {
-        m_dataProcessor.setRunning(true);
-        new Thread(m_dataProcessor).start();
-      }
-
-      for (DataOscSender sender : m_dataOscSenderMap.values())
+      for (DataSender sender : m_dataSenderMap.values())
       {
         m_sendLocationsText.append(sender.getIpAddress() + ":" + sender.getPort() + "\n");
       }
@@ -452,179 +486,17 @@ public class MainActivity extends Activity implements OnClickListener
     }
   }
 
-  class DataProcessor implements Runnable
+  class DataSender implements Runnable
   {
-    public final String MELLOW = "MELLOW";
-    public final String CONCENTRATION = "CONCENTRATION";
-    public final String VALENCE = "VALENCE";
-    public final String AROUSAL = "AROUSAL";
-    private final int MEAN_SAMPLE_SIZE = 100;
-    private volatile boolean m_running = false;
-    private long m_getIndex = 0, m_putIndex = 0;
-    private ArrayList<Object> m_oscSendList;
-    private Float[] m_fp1fp2Alpha, m_fp1fp2Beta;
-    //private final ConcurrentHashMap<String, BlockingQueue<Float>> m_dataQueueMap;
-    private final ConcurrentHashMap<String, IDataFilter> m_dataFilterMap;
-    private final ConcurrentHashMap<Long, Float[]> m_alphaFpValueMap, m_betaFpValueMap;
-    private final BlockingQueue<ArrayList<Object>> m_fpArousalQueue, m_fpValenceQueue;
-
-    public DataProcessor()
-    {
-      m_dataFilterMap = new ConcurrentHashMap<>();
-      m_dataFilterMap.put(MELLOW, new MeanFilter(MEAN_SAMPLE_SIZE*2));
-      m_dataFilterMap.put(CONCENTRATION, new MeanFilter(MEAN_SAMPLE_SIZE*2));
-      m_dataFilterMap.put(VALENCE, new NormalizeMeanFilter(200, 50));
-      m_dataFilterMap.put(AROUSAL, new NormalizeMeanFilter(200, 50));
-      m_alphaFpValueMap = new ConcurrentHashMap<>();
-      m_betaFpValueMap = new ConcurrentHashMap<>();
-      m_fpArousalQueue = new LinkedBlockingQueue<>();
-      m_fpValenceQueue = new LinkedBlockingQueue<>();
-    }
-
-    @Override
-    public void run()
-    {
-      while (m_running)
-      {
-        try
-        {
-          computeFpArousalValence();
-          //calculateAverages();
-        }
-        catch (IOException | InterruptedException e)
-        {
-          Log.e("DataProcessor", e.toString());
-        }
-      }
-    }
-
-    private void computeFpArousalValence() throws IOException, InterruptedException
-    {
-      while (m_betaFpValueMap.containsKey(m_getIndex) && m_alphaFpValueMap.containsKey(m_getIndex))
-      {
-        m_oscSendList = new ArrayList<>();
-        m_fp1fp2Alpha = m_alphaFpValueMap.remove(m_getIndex);
-        m_fp1fp2Beta = m_betaFpValueMap.remove(m_getIndex);
-
-        // arousal
-        m_oscSendList.add(((m_fp1fp2Alpha[0] - m_fp1fp2Beta[0]) + (m_fp1fp2Alpha[1] - m_fp1fp2Beta[1])) / 2);
-        // Sergio Giraldo, Rafael Ramirez:2013:Brain-Activity-Driven Real-Time Music Emotive Control:4
-        float arousal = (m_fp1fp2Beta[0] + m_fp1fp2Beta[1]) / (m_fp1fp2Alpha[0] + m_fp1fp2Alpha[1]);
-        //m_oscSendList.add(arousal);
-        m_dataFilterMap.get(AROUSAL).put(arousal);
-        m_fpArousalQueue.add(m_oscSendList);
-
-        // valence
-        // Kenneth Hugdahl, Richard J. Davidson:2003:The asymmetrical brain:568
-        m_oscSendList = new ArrayList<>();
-        m_oscSendList.add(m_fp1fp2Alpha[1] - m_fp1fp2Alpha[0]);
-        // Sergio Giraldo, Rafael Ramirez:2013:Brain-Activity-Driven Real-Time Music Emotive Control:4
-        float valence = m_fp1fp2Alpha[1] / m_fp1fp2Beta[1] - m_fp1fp2Alpha[0] / m_fp1fp2Beta[0];
-        //m_oscSendList.add(valence);
-        m_dataFilterMap.get(VALENCE).put(valence);
-        m_fpValenceQueue.add(m_oscSendList);
-
-        m_getIndex++;
-      }
-    }
-
-    private void calculateAverages()
-    {
-      for (IDataFilter filter : m_dataFilterMap.values())
-      {
-        filter.process();
-      }
-    }
-
-    public synchronized void setRunning(boolean running)
-    {
-      m_running = running;
-    }
-
-    public synchronized Float getMellowAvg()
-    {
-      return (Float)m_dataFilterMap.get(MELLOW).getValue();
-    }
-
-    public synchronized Float getConcentrationAvg()
-    {
-      return (Float)m_dataFilterMap.get(CONCENTRATION).getValue();
-    }
-
-    public synchronized Float getValenceNormalized()
-    {
-      return (Float)m_dataFilterMap.get(VALENCE).getValue();
-    }
-
-    public synchronized Float getArousalNormalized()
-    {
-      return (Float)m_dataFilterMap.get(AROUSAL).getValue();
-    }
-
-    public boolean isRunning()
-    {
-      return m_running;
-    }
-
-    public void putMellow(float value) throws InterruptedException
-    {
-      m_dataFilterMap.get(MELLOW).put(value);
-    }
-
-    public void putConcentration(float value) throws InterruptedException
-    {
-      m_dataFilterMap.get(CONCENTRATION).put(value);
-    }
-
-    public synchronized void putAlphaFp(final Float[] floats)
-    {
-      m_alphaFpValueMap.put(m_putIndex, floats);
-      if (m_betaFpValueMap.containsKey(m_putIndex))
-      {
-        m_putIndex++;
-      }
-    }
-
-    public synchronized void putBetaFp(final Float[] floats)
-    {
-      m_betaFpValueMap.put(m_putIndex, floats);
-      if (m_alphaFpValueMap.containsKey(m_putIndex))
-      {
-        m_putIndex++;
-      }
-    }
-
-    public ArrayList<Object> getFpArousal() throws InterruptedException
-    {
-      return m_fpArousalQueue.poll();
-    }
-
-    public ArrayList<Object> getFpValence() throws InterruptedException
-    {
-      return m_fpValenceQueue.poll();
-    }
-  }
-
-  class DataOscSender implements Runnable
-  {
-    protected OSCPortOut m_oscSender;
     private volatile boolean m_senderRunning = true;
     protected String m_ipAddress, m_port;
     private ArrayList<Object> m_floats;
     private ArrayList<Object> m_sendList;
 
-    public DataOscSender(String ipAddress, int port)
+    public DataSender(String ipAddress, int port)
     {
-      try
-      {
-        m_ipAddress = ipAddress;
-        m_port = String.valueOf(port);
-        m_oscSender = new OSCPortOut(InetAddress.getByName(ipAddress), port);
-      }
-      catch (SocketException | UnknownHostException e)
-      {
-        Log.e("OscSender", e.toString());
-      }
+      m_ipAddress = ipAddress;
+      m_port = String.valueOf(port);
     }
 
     @Override
@@ -632,153 +504,105 @@ public class MainActivity extends Activity implements OnClickListener
     {
       while (m_senderRunning)
       {
-        try
+        Object obj;
+        ZephyrProtos.ObservationsPB.Builder builder = ZephyrProtos.ObservationsPB.newBuilder();
+        int i = 0;
+        while ((obj = m_dataQueue.poll()) != null && i++ < 100)
         {
-          MuseDataPacket p = m_dataQueue.poll();
-          if (p != null)
+          if (obj instanceof MuseDataPacket)
           {
-            switch (p.getPacketType())
+            MuseDataPacket p = (MuseDataPacket)obj;
+            List<String> values = new ArrayList<>();
+            for (Double val : p.getValues())
             {
-              case EEG:
-                m_oscSender.send(new OSCMessage("/muse/eeg", getFloats(p)));
-                break;
-              case QUANTIZATION:
-                m_oscSender.send(new OSCMessage("/muse/eeg/quantization", getFloats(p)));
-                break;
-              //case DROPPED_EEG:
-              //  int droppedEeg = (int)p.getValues().get(0).doubleValue();
-              //  m_oscSender.send(new OSCMessage("/muse/eeg/dropped_samples", Collections.singleton(droppedEeg)));
-              //  break;
-              case ACCELEROMETER:
-                m_oscSender.send(new OSCMessage("/muse/acc", getFloats(p)));
-                break;
-              //case DROPPED_ACCELEROMETER:
-              //  int droppedAcc = (int)p.getValues().get(0).doubleValue();
-              //  m_oscSender.send(new OSCMessage("/muse/acc/dropped_samples", Collections.singleton(droppedAcc)));
-              //  break;
-              case DRL_REF:
-                m_oscSender.send(new OSCMessage("/muse/drlref", getFloats(p)));
-                break;
-              case HORSESHOE:
-                m_oscSender.send(new OSCMessage("/muse/elements/horseshoe", getFloats(p)));
-                break;
-              //case ARTIFACTS:
-              //  m_oscSender.send(new OSCMessage("/muse/drlref", Collections.singleton(1)));
-              //  break;
-              case ALPHA_RELATIVE:
-                m_oscSender.send(new OSCMessage("/muse/elements/alpha_relative", getFloats(p)));
-                break;
-              case BETA_RELATIVE:
-                m_oscSender.send(new OSCMessage("/muse/elements/beta_relative", getFloats(p)));
-                break;
-              case DELTA_RELATIVE:
-                m_oscSender.send(new OSCMessage("/muse/elements/delta_relative", getFloats(p)));
-                break;
-              case THETA_RELATIVE:
-                m_oscSender.send(new OSCMessage("/muse/elements/theta_relative", getFloats(p)));
-                break;
-              case GAMMA_RELATIVE:
-                m_oscSender.send(new OSCMessage("/muse/elements/gamma_relative", getFloats(p)));
-                break;
-              case ALPHA_ABSOLUTE:
-                m_oscSender.send(new OSCMessage("/muse/elements/alpha_absolute", getFloats(p)));
-                m_sendList = m_dataProcessor.getFpArousal();
-                if (m_sendList != null)
-                {
-                  m_sendList.add(m_dataProcessor.getArousalNormalized());
-                  m_oscSender.send(new OSCMessage("/muse/elements/experimental/arousal_fp", m_sendList));
-                }
-                m_sendList = m_dataProcessor.getFpValence();
-                if (m_sendList != null)
-                {
-                  m_sendList.add(m_dataProcessor.getValenceNormalized());
-                  m_oscSender.send(new OSCMessage("/muse/elements/experimental/valence_fp", m_sendList));
-                }
-                break;
-              case BETA_ABSOLUTE:
-                m_oscSender.send(new OSCMessage("/muse/elements/beta_absolute", getFloats(p)));
-                m_sendList = m_dataProcessor.getFpArousal();
-                if (m_sendList != null)
-                {
-                  m_sendList.add(m_dataProcessor.getArousalNormalized());
-                  m_oscSender.send(new OSCMessage("/muse/elements/experimental/arousal_fp", m_sendList));
-                }
-                m_sendList = m_dataProcessor.getFpValence();
-                if (m_sendList != null)
-                {
-                  m_sendList.add(m_dataProcessor.getValenceNormalized());
-                  m_oscSender.send(new OSCMessage("/muse/elements/experimental/valence_fp", m_sendList));
-                }
-                break;
-              case DELTA_ABSOLUTE:
-                m_oscSender.send(new OSCMessage("/muse/elements/delta_absolute", getFloats(p)));
-                break;
-              case THETA_ABSOLUTE:
-                m_oscSender.send(new OSCMessage("/muse/elements/theta_absolute", getFloats(p)));
-                break;
-              case GAMMA_ABSOLUTE:
-                m_oscSender.send(new OSCMessage("/muse/elements/gamma_absolute", getFloats(p)));
-                break;
-              case ALPHA_SCORE:
-                m_oscSender.send(new OSCMessage("/muse/elements/alpha_session_score", getFloats(p)));
-                break;
-              case BETA_SCORE:
-                m_oscSender.send(new OSCMessage("/muse/elements/beta_session_score", getFloats(p)));
-                break;
-              case DELTA_SCORE:
-                m_oscSender.send(new OSCMessage("/muse/elements/delta_session_score", getFloats(p)));
-                break;
-              case THETA_SCORE:
-                m_oscSender.send(new OSCMessage("/muse/elements/theta_session_score", getFloats(p)));
-                break;
-              case GAMMA_SCORE:
-                m_oscSender.send(new OSCMessage("/muse/elements/gamma_session_score", getFloats(p)));
-                break;
-              case MELLOW:
-                m_floats = getFloats(p);
-                m_floats.add(m_dataProcessor.getMellowAvg());
-                m_oscSender.send(new OSCMessage("/muse/elements/experimental/mellow", m_floats));
-                break;
-              case CONCENTRATION:
-                m_floats = getFloats(p);
-                m_floats.add(m_dataProcessor.getConcentrationAvg());
-                m_oscSender.send(new OSCMessage("/muse/elements/experimental/concentration", m_floats));
-                break;
-              case BATTERY:
-                ArrayList<Object> returnList = new ArrayList<>();
-                returnList.add((int)(p.getValues().get(0) * 100));
-                returnList.add((int)(double)p.getValues().get(1));
-                returnList.add((int)(double)p.getValues().get(1));
-                returnList.add((int)(double)p.getValues().get(2));
-                m_oscSender.send(new OSCMessage("/muse/batt", returnList));
-                break;
-
-              default:
-                break;
+              values.add(Double.toString(val));
+            }
+            builder.addObservations(
+                ZephyrProtos.ObservationPB.newBuilder()
+                    .setName(p.getPacketType().toString())
+                    .setUnit("")
+                    .setTime(p.getTimestamp())
+                    .addAllValues(values)
+            );
+          }
+          else if (obj instanceof MuseArtifactPacket)
+          {
+            MuseArtifactPacket p = (MuseArtifactPacket)obj;
+            if (p.getBlink())
+            {
+              builder.addObservations(
+                  ZephyrProtos.ObservationPB.newBuilder()
+                      .setName("ARTIFACTS")
+                      .setUnit("")
+                      .setTime(System.currentTimeMillis())
+                      .addValues("blink")
+              );
+            }
+            if (p.getJawClench())
+            {
+              builder.addObservations(
+                  ZephyrProtos.ObservationPB.newBuilder()
+                      .setName("ARTIFACTS")
+                      .setUnit("")
+                      .setTime(System.currentTimeMillis())
+                      .addValues("jaw")
+              );
             }
           }
-          else
-          {
-            Thread.sleep(1);
-          }
         }
-        catch (InterruptedException | IOException e)
+        ConnectivityManager connManager = (ConnectivityManager)getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo activeNetInfo = connManager.getActiveNetworkInfo();
+        if ("WIFI".equals(activeNetInfo.getTypeName()))
         {
-          Log.e("Muse Headband", e.toString());
+          //ZephyrProtos.ObservationsPB obss = getFileObservations(m_observationsFile);
+          //if (obss != null && obss.getObservationsCount() > 0)
+          //{
+          //  builder.addAllObservations(obss.getObservationsList());
+          //  emptyObservationFile();
+          //}
+          ZephyrProtos.ObservationsPB observationsPB = builder.build();
+          m_queryThreadExecutor.execute(new RemoteClientSaveWorker(observationsPB, m_keystore));
         }
       }
     }
 
-    private ArrayList<Object> getFloats(MuseDataPacket packet)
+    private ZephyrProtos.ObservationsPB getFileObservations(File observationsFile) throws IOException
     {
-      ArrayList<Object> returnList = new ArrayList<>();
-
-      for (double value : packet.getValues())
-      {
-        returnList.add((float)value);
-      }
-      return returnList;
+      return ZephyrProtos.ObservationsPB.parseDelimitedFrom(new FileInputStream(observationsFile));
     }
+
+    //private void emptyObservationFile()
+    //{
+    //  String string1 = "";
+    //  FileOutputStream fos;
+    //  try
+    //  {
+    //    fos = new FileOutputStream(m_observationsFile, false);
+    //    FileWriter fWriter;
+    //
+    //    try
+    //    {
+    //      fWriter = new FileWriter(fos.getFD());
+    //
+    //      fWriter.write(string1);
+    //      fWriter.flush();
+    //      fWriter.close();
+    //    }
+    //    catch (Exception e)
+    //    {
+    //      e.printStackTrace();
+    //    }
+    //    finally
+    //    {
+    //      fos.getFD().sync();
+    //      fos.close();
+    //    }
+    //  }
+    //  catch (Exception e)
+    //  {
+    //    e.printStackTrace();
+    //  }
+    //}
 
     public synchronized void setSenderRunning(boolean senderRunning)
     {
@@ -797,9 +621,9 @@ public class MainActivity extends Activity implements OnClickListener
   }
 
   /**
-   * Data listener will be registered to listen for: Accelerometer, Eeg and Relative Alpha bandpower packets. In all cases we will update UI with new values. We also will log
-   * message if Artifact packets contains "blink" flag. DataListener methods will be called from execution thread. If you are implementing "serious" processing algorithms inside
-   * those listeners, consider to create another thread.
+   * Data listener will be registered to listen for: Accelerometer, Eeg and Relative Alpha bandpower packets. In all cases we will update UI with new values. We also
+   * will log message if Artifact packets contains "blink" flag. DataListener methods will be called from execution thread. If you are implementing "serious"
+   * processing algorithms inside those listeners, consider to create another thread.
    */
   class DataListener extends MuseDataListener implements Runnable
   {
@@ -824,24 +648,24 @@ public class MainActivity extends Activity implements OnClickListener
       try
       {
         m_dataQueue.put(p);
-        ArrayList<Double> values = p.getValues();
-        switch (p.getPacketType())
-        {
-          case ALPHA_ABSOLUTE:
-            m_dataProcessor.putAlphaFp(new Float[]{values.get(Eeg.FP1.ordinal()).floatValue(), values.get(Eeg.FP2.ordinal()).floatValue()});
-            break;
-          case BETA_ABSOLUTE:
-            m_dataProcessor.putBetaFp(new Float[]{values.get(Eeg.FP1.ordinal()).floatValue(), values.get(Eeg.FP2.ordinal()).floatValue()});
-            break;
-          case MELLOW:
-            m_dataProcessor.putMellow(values.get(0).floatValue());
-            break;
-          case CONCENTRATION:
-            m_dataProcessor.putConcentration(values.get(0).floatValue());
-            break;
-          default:
-            break;
-        }
+        //ArrayList<Double> values = p.getValues();
+        //switch (p.getPacketType())
+        //{
+        //  case ALPHA_ABSOLUTE:
+        //    m_dataProcessor.putAlphaFp(new Float[]{values.get(Eeg.FP1.ordinal()).floatValue(), values.get(Eeg.FP2.ordinal()).floatValue()});
+        //    break;
+        //  case BETA_ABSOLUTE:
+        //    m_dataProcessor.putBetaFp(new Float[]{values.get(Eeg.FP1.ordinal()).floatValue(), values.get(Eeg.FP2.ordinal()).floatValue()});
+        //    break;
+        //  case MELLOW:
+        //    m_dataProcessor.putMellow(values.get(0).floatValue());
+        //    break;
+        //  case CONCENTRATION:
+        //    m_dataProcessor.putConcentration(values.get(0).floatValue());
+        //    break;
+        //  default:
+        //    break;
+        //}
       }
       catch (InterruptedException e)
       {
@@ -871,6 +695,39 @@ public class MainActivity extends Activity implements OnClickListener
       //        }
       //      }
     }
+
+    //    @Override
+    //    public int onStartCommand(Intent intent, int flags, int startId)
+    //    {
+    //      Notification noti = new Notification.Builder(mContext)
+    //               .setContentTitle("New mail from " + sender.toString())
+    //               .setContentText(subject)
+    //               .setSmallIcon(R.drawable.new_mail)
+    //               .setLargeIcon(aBitmap)
+    //               .build();
+    //
+    //            Intent i=new Intent(this, FakePlayer.class);
+    //
+    //            i.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|
+    //                       Intent.FLAG_ACTIVITY_SINGLE_TOP);
+    //
+    //            PendingIntent pi= PendingIntent.getActivity(this, 0,
+    //                i, 0);
+    //
+    //            note.setLatestEventInfo(this, "Fake Player",
+    //                                    "Now Playing: \"Ummmm, Nothing\"",
+    //                                    pi);
+    //            note.flags|=Notification.FLAG_NO_CLEAR;
+    //
+    //            startForeground(1337, note);
+    //      return super.onStartCommand(intent, flags, startId);
+    //    }
+
+    //    @Override
+    //    public IBinder onBind(Intent intent)
+    //    {
+    //      return null;
+    //    }
 
     //private void updateAlphaRelative(final ArrayList<Double> data)
     //{

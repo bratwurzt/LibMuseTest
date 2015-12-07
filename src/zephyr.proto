@@ -1,0 +1,16 @@
+package eu.fistar;
+
+option java_package = "eu.fistar.sdcs.pa";
+option java_outer_classname = "ZephyrProtos";
+
+message ObservationPB {
+ required string name = 1;
+ required string unit = 2;
+ required int64 time = 3;
+ optional int32 duration = 4;
+ repeated string values = 5;
+}
+
+message ObservationsPB {
+ repeated ObservationPB observations = 1;
+}
