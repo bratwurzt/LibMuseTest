@@ -68,7 +68,8 @@ public class MainActivity extends Activity implements OnClickListener
 {
   private static final Pattern PARTIAl_IP_ADDRESS =
       Pattern.compile("^((25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[0-9])\\.){0,3}((25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[0-9])){0,1}$");
-  public static int BATCH_NUM = 500;
+  public static int BATCH_TIME = 500;
+  private Long m_lastTime;
   protected ExecutorService m_queryThreadExecutor = Executors.newSingleThreadExecutor();
   private Muse muse = null;
   final Object LOCK = new Object();
@@ -269,7 +270,6 @@ public class MainActivity extends Activity implements OnClickListener
               m_wakeLock.acquire();
             }
           }
-
         }
         catch (Exception e)
         {
@@ -291,7 +291,8 @@ public class MainActivity extends Activity implements OnClickListener
          * muse.disconnect(false);
          */
         muse.disconnect(true);
-
+        setStatus(this, "", R.id.horseshoe1);
+        setStatus(this, "", R.id.battery);
         synchronized (LOCK)
         {
           if (m_wakeLock.isHeld())
@@ -336,21 +337,21 @@ public class MainActivity extends Activity implements OnClickListener
     //muse.registerDataListener(dataListener, MuseDataPacketType.DRL_REF);
     muse.registerDataListener(dataListener, MuseDataPacketType.HORSESHOE);
     muse.registerDataListener(dataListener, MuseDataPacketType.BATTERY);
-    //muse.registerDataListener(dataListener, MuseDataPacketType.ALPHA_RELATIVE);
-    //muse.registerDataListener(dataListener, MuseDataPacketType.BETA_RELATIVE);
-    //muse.registerDataListener(dataListener, MuseDataPacketType.DELTA_RELATIVE);
-    //muse.registerDataListener(dataListener, MuseDataPacketType.THETA_RELATIVE);
-    //muse.registerDataListener(dataListener, MuseDataPacketType.GAMMA_RELATIVE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.ALPHA_RELATIVE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.BETA_RELATIVE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.DELTA_RELATIVE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.THETA_RELATIVE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.GAMMA_RELATIVE);
     muse.registerDataListener(dataListener, MuseDataPacketType.ALPHA_ABSOLUTE);
     muse.registerDataListener(dataListener, MuseDataPacketType.BETA_ABSOLUTE);
     muse.registerDataListener(dataListener, MuseDataPacketType.DELTA_ABSOLUTE);
     muse.registerDataListener(dataListener, MuseDataPacketType.THETA_ABSOLUTE);
     muse.registerDataListener(dataListener, MuseDataPacketType.GAMMA_ABSOLUTE);
-    //muse.registerDataListener(dataListener, MuseDataPacketType.ALPHA_SCORE);
-    //muse.registerDataListener(dataListener, MuseDataPacketType.BETA_SCORE);
-    //muse.registerDataListener(dataListener, MuseDataPacketType.DELTA_SCORE);
-    //muse.registerDataListener(dataListener, MuseDataPacketType.THETA_SCORE);
-    //muse.registerDataListener(dataListener, MuseDataPacketType.GAMMA_SCORE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.ALPHA_SCORE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.BETA_SCORE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.DELTA_SCORE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.THETA_SCORE);
+    muse.registerDataListener(dataListener, MuseDataPacketType.GAMMA_SCORE);
     muse.registerDataListener(dataListener, MuseDataPacketType.MELLOW);
     muse.registerDataListener(dataListener, MuseDataPacketType.CONCENTRATION);
     muse.setPreset(MusePreset.PRESET_12);
@@ -394,7 +395,7 @@ public class MainActivity extends Activity implements OnClickListener
       final String status = p.getPreviousConnectionState().toString() + " -> " + current;
       final String full = "Muse " + p.getSource().getMacAddress() + " " + status;
       Log.i("Muse Headband", full);
-      Activity activity = activityRef.get();
+      final Activity activity = activityRef.get();
       // UI thread is used here only because we need to update
       // TextView values. You don't have to use another thread, unless
       // you want to run disconnect() or connect() from connection packet
@@ -419,6 +420,8 @@ public class MainActivity extends Activity implements OnClickListener
             }
             else
             {
+              setStatus(activity, "", R.id.horseshoe1);
+              setStatus(activity, "", R.id.battery);
               museVersionText.setText(R.string.undefined);
             }
           }
@@ -475,6 +478,7 @@ public class MainActivity extends Activity implements OnClickListener
     @Override
     public void run()
     {
+      m_lastTime = System.currentTimeMillis();
       Looper.prepare();
       mHandler = new Handler();
       Looper.loop();
@@ -485,108 +489,172 @@ public class MainActivity extends Activity implements OnClickListener
     {
       List<String> values = new ArrayList<>();
       ArrayList<Double> doubles = p.getValues();
-      if (MuseDataPacketType.BATTERY.equals(p.getPacketType()) && !doubles.get(0).equals(m_temp))
+      if (MuseDataPacketType.BATTERY.equals(p.getPacketType()))
       {
-        m_temp = doubles.get(0);
-        final String statusString = String.valueOf(m_temp) + "%";
-        setStatus(statusString, R.id.battery);
+        if (!doubles.get(0).equals(m_temp))
+        {
+          m_temp = doubles.get(0);
+          final String statusString = String.valueOf(m_temp) + "%";
+          setStatus(activityRef.get(), statusString, R.id.battery);
+        }
       }
       else if (MuseDataPacketType.HORSESHOE.equals(p.getPacketType()))
       {
-        if (!doubles.get(0).equals(m_hs1))
-        {
-          m_hs1 = doubles.get(0);
-          setStatus(String.valueOf(m_hs1), R.id.horseshoe1);
-        }
-        if (!doubles.get(1).equals(m_hs2))
-        {
-          m_hs2 = doubles.get(1);
-          setStatus(String.valueOf(m_hs2), R.id.horseshoe2);
-        }
-        if (!doubles.get(2).equals(m_hs3))
-        {
-          m_hs3 = doubles.get(2);
-          setStatus(String.valueOf(m_hs3), R.id.horseshoe3);
-        }
-        if (!doubles.get(3).equals(m_hs4))
-        {
-          m_hs4 = doubles.get(3);
-          setStatus(String.valueOf(m_hs4), R.id.horseshoe4);
-        }
-
+        horshoeStatusUpdate(doubles);
       }
       else
       {
-        for (Double val : doubles)
-        {
-          values.add(Double.toString(val));
-        }
         long timestamp = p.getTimestamp();
-        m_builder.addObservations(
-            ZephyrProtos.ObservationPB.newBuilder()
-                .setName(p.getPacketType().toString())
-                .setUnit("")
-                .setTime(timestamp == 0 ? System.currentTimeMillis() : timestamp / 1000)
-                .addAllValues(values)
-        );
-
-
-        if (m_builder.getObservationsCount() >= BATCH_NUM)
+        switch (p.getPacketType())
         {
-          String ipAddress = m_ipAddressEditText.getText().toString();
-          Integer port = Integer.parseInt(m_portEditText.getText().toString());
-          NetworkInfo activeNetInfo = m_connManager.getActiveNetworkInfo();
-          if ("WIFI".equals(activeNetInfo.getTypeName()))
-          {
-            m_queryThreadExecutor.execute(new RemoteClientSaveWorker(m_builder.build(), m_socket, ipAddress, port));
-            m_builder.clear();
-          }
+          case EEG:
+          case QUANTIZATION:
+          case ACCELEROMETER:
+          case ALPHA_ABSOLUTE:
+          case BETA_ABSOLUTE:
+          case DELTA_ABSOLUTE:
+          case THETA_ABSOLUTE:
+          case GAMMA_ABSOLUTE:
+          case ALPHA_RELATIVE:
+          case BETA_RELATIVE:
+          case DELTA_RELATIVE:
+          case THETA_RELATIVE:
+          case GAMMA_RELATIVE:
+          case ALPHA_SCORE:
+          case BETA_SCORE:
+          case DELTA_SCORE:
+          case THETA_SCORE:
+          case GAMMA_SCORE:
+          case MELLOW:
+          case CONCENTRATION:
+            for (int i = 0; i < p.getValues().size(); i++)
+            {
+              m_builder.addObservations(
+                  ZephyrProtos.ObservationPB.newBuilder()
+                      .setName(p.getPacketType().toString())
+                      .setUnit(getSubType(p.getPacketType(), i))
+                      .setTime(getTime(p.getPacketType(), timestamp))
+                      .addValues(Double.toString(p.getValues().get(i)))
+              );
+            }
+            break;
+          default:
+            for (Double val : doubles)
+            {
+              values.add(Double.toString(val));
+            }
+            m_builder.addObservations(
+                ZephyrProtos.ObservationPB.newBuilder()
+                    .setName(p.getPacketType().toString())
+                    .setUnit("")
+                    .setTime(timestamp < 1 ? System.currentTimeMillis() : timestamp / 1000)
+                    .addAllValues(values)
+            );
+            break;
         }
+
+        checkBufferAndSend();
       }
     }
 
-    private void setStatus(final String statusString, final int textFieldId)
+    private void checkBufferAndSend()
     {
-      Activity activity = activityRef.get();
-      if (activity != null)
+      if (System.currentTimeMillis() - BATCH_TIME > m_lastTime)
       {
-        activity.runOnUiThread(new Runnable()
+        String ipAddress = m_ipAddressEditText.getText().toString();
+        Integer port = Integer.parseInt(m_portEditText.getText().toString());
+        NetworkInfo activeNetInfo = m_connManager.getActiveNetworkInfo();
+        if ("WIFI".equals(activeNetInfo.getTypeName()))
         {
-          @Override
-          public void run()
-          {
-            TextView statusText = (TextView)findViewById(textFieldId);
-            statusText.setTextColor(getColor(statusString));
-            if (!statusString.equals(statusText.getText()))
-            {
-              if (textFieldId != R.id.battery)
-              {
-                statusText.setText(statusString.substring(0, 1));
-              }
-              else
-              {
-                statusText.setText(statusString);
-              }
-            }
-          }
+          m_queryThreadExecutor.execute(new RemoteClientSaveWorker(m_builder.build(), m_socket, ipAddress, port));
+          m_builder.clear();
+        }
+        m_lastTime = System.currentTimeMillis();
+      }
+    }
 
-          private int getColor(String statusString)
-          {
-            if ("1.0".equals(statusString))
-            {
-              return Color.GREEN;
-            }
-            else if ("2.0".equals(statusString))
-            {
-              return Color.YELLOW;
-            }
-            else if ("3.0".equals(statusString))
-            {
-              return Color.RED;
-            }
-            return Color.BLACK;
-          }
-        });
+    private void horshoeStatusUpdate(ArrayList<Double> doubles)
+    {
+      if (!doubles.get(0).equals(m_hs1))
+      {
+        m_hs1 = doubles.get(0);
+        setStatus(activityRef.get(), String.valueOf(m_hs1), R.id.horseshoe1);
+      }
+      if (!doubles.get(1).equals(m_hs2))
+      {
+        m_hs2 = doubles.get(1);
+        setStatus(activityRef.get(), String.valueOf(m_hs2), R.id.horseshoe2);
+      }
+      if (!doubles.get(2).equals(m_hs3))
+      {
+        m_hs3 = doubles.get(2);
+        setStatus(activityRef.get(), String.valueOf(m_hs3), R.id.horseshoe3);
+      }
+      if (!doubles.get(3).equals(m_hs4))
+      {
+        m_hs4 = doubles.get(3);
+        setStatus(activityRef.get(), String.valueOf(m_hs4), R.id.horseshoe4);
+      }
+    }
+
+    private long getTime(MuseDataPacketType packetType, long timestamp)
+    {
+      switch (packetType)
+      {
+        case EEG:
+        case QUANTIZATION:
+        case ACCELEROMETER:
+          return timestamp < 1 ? System.currentTimeMillis() : timestamp / 1000;
+        case ALPHA_ABSOLUTE:
+        case BETA_ABSOLUTE:
+        case DELTA_ABSOLUTE:
+        case THETA_ABSOLUTE:
+        case GAMMA_ABSOLUTE:
+        case ALPHA_RELATIVE:
+        case BETA_RELATIVE:
+        case DELTA_RELATIVE:
+        case THETA_RELATIVE:
+        case GAMMA_RELATIVE:
+        case ALPHA_SCORE:
+        case BETA_SCORE:
+        case DELTA_SCORE:
+        case THETA_SCORE:
+        case GAMMA_SCORE:
+        case CONCENTRATION:
+        case MELLOW:
+          return timestamp < 1 ? System.currentTimeMillis() - 100 : timestamp / 1000; // 10hz so return -100ms timestamp
+          //return timestamp < 1 ? System.currentTimeMillis() - 400 : timestamp / 1000; // 10hz, but takes about 1 minute of data so return -30000ms timestamp
+        default:
+          return System.currentTimeMillis();
+      }
+    }
+
+    private String getSubType(MuseDataPacketType packetType, int i)
+    {
+      switch (packetType)
+      {
+        case EEG:
+        case QUANTIZATION:
+        case ALPHA_ABSOLUTE:
+        case BETA_ABSOLUTE:
+        case DELTA_ABSOLUTE:
+        case THETA_ABSOLUTE:
+        case GAMMA_ABSOLUTE:
+        case ALPHA_RELATIVE:
+        case BETA_RELATIVE:
+        case DELTA_RELATIVE:
+        case THETA_RELATIVE:
+        case GAMMA_RELATIVE:
+        case ALPHA_SCORE:
+        case BETA_SCORE:
+        case DELTA_SCORE:
+        case THETA_SCORE:
+        case GAMMA_SCORE:
+          return i == 0 ? "TP9" : i == 1 ? "FP1" : i == 2 ? "FP2" : "TP10";
+        case ACCELEROMETER:
+          return i == 0 ? "ACC_X" : i == 1 ? "ACC_Y" : "ACC_Z";
+        default:
+          return "";
       }
     }
 
@@ -614,17 +682,51 @@ public class MainActivity extends Activity implements OnClickListener
         );
       }
 
-      if (m_builder.getObservationsCount() >= BATCH_NUM)
+      checkBufferAndSend();
+    }
+  }
+
+  private void setStatus(Activity activity, final String statusString, final int textFieldId)
+  {
+    if (activity != null)
+    {
+      activity.runOnUiThread(new Runnable()
       {
-        String ipAddress = m_ipAddressEditText.getText().toString();
-        Integer port = Integer.parseInt(m_portEditText.getText().toString());
-        NetworkInfo activeNetInfo = m_connManager.getActiveNetworkInfo();
-        if ("WIFI".equals(activeNetInfo.getTypeName()))
+        @Override
+        public void run()
         {
-          m_queryThreadExecutor.execute(new RemoteClientSaveWorker(m_builder.build(), m_socket, ipAddress, port));
-          m_builder.clear();
+          TextView statusText = (TextView)findViewById(textFieldId);
+          statusText.setTextColor(getColor(statusString));
+          if (!statusString.equals(statusText.getText()) && statusString.length() > 0)
+          {
+            if (textFieldId != R.id.battery)
+            {
+              statusText.setText(statusString.substring(0, 1));
+            }
+            else
+            {
+              statusText.setText(statusString);
+            }
+          }
         }
-      }
+
+        private int getColor(String statusString)
+        {
+          if ("1.0".equals(statusString))
+          {
+            return Color.GREEN;
+          }
+          else if ("2.0".equals(statusString))
+          {
+            return Color.YELLOW;
+          }
+          else if ("3.0".equals(statusString))
+          {
+            return Color.RED;
+          }
+          return Color.BLACK;
+        }
+      });
     }
   }
 }

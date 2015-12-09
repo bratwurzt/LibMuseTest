@@ -51,6 +51,7 @@ public class RemoteClientSaveWorker extends ClientWorker
   protected void write(OutputStream outputStream) throws Exception
   {
     m_observations.writeTo(outputStream);
+    outputStream.flush();
   }
 
   @Override
@@ -62,14 +63,26 @@ public class RemoteClientSaveWorker extends ClientWorker
   {
     if (m_socket == null || !m_socket.isConnected() || m_socket.isClosed())
     {
-      try
-      {
-        m_socket = createSocket(m_port, m_ipAddress);
-      }
-      catch (IOException e)
-      {
-        e.printStackTrace();
-      }
+      int i = 0;
+      //while (i++ < 5)
+      //{
+        try
+        {
+          m_socket = createSocket(m_port, m_ipAddress);
+          //break;
+        }
+        catch (IOException e)
+        {
+          //try
+          //{
+          //  Thread.sleep(10);
+          //}
+          //catch (InterruptedException e1)
+          //{
+            e.printStackTrace();
+          //}
+        }
+      //}
     }
   }
 
@@ -95,6 +108,6 @@ public class RemoteClientSaveWorker extends ClientWorker
         }
       }
     }
-    return SocketFactory.getDefault().createSocket(InetAddress.getByName("188.230.143.188"), serverPort, localInetAddress, localPort);
+    return SocketFactory.getDefault().createSocket(InetAddress.getByName(serverIPAddress), serverPort, localInetAddress, localPort);
   }
 }
