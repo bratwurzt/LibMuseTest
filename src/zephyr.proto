@@ -1,4 +1,4 @@
-package eu.fistar;
+package eu.fistar.sdcs.pa;
 
 option java_package = "eu.fistar.sdcs.pa";
 option java_outer_classname = "ZephyrProtos";
