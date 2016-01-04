@@ -47,7 +47,7 @@ import com.example.hellojni.vectori;
  */
 public class MainActivity extends Activity implements OnClickListener
 {
-  public static int BLOCK_SENT_SIZE = 64;
+  //public static int CHUNK_SENT_SIZE = 64;
 
   static
   {
@@ -73,19 +73,18 @@ public class MainActivity extends Activity implements OnClickListener
   private final BlockingQueue<MuseDataPacket> m_dataQueue;
   private Handler mHandler = null;
   //private Map<String, DataOscSender> m_dataOscSenderMap;
-  private ArrayList<DataLslSender> m_dataLslSenderList;
+  private DataLslSender m_dataLslSender;
   //private final DataProcessor m_dataProcessor;
   private PowerManager.WakeLock m_wakeLock;
 
-  private EditText m_ipAddressEditText, m_portEditText;
-  private TextView m_sendLocationsText;
+  private EditText m_ipAddressEditTF, m_portEditTF, m_initChunkTF;
+  private TextView m_sendLocationsLabel;
 
   public MainActivity()
   {
     m_dataQueue = new LinkedBlockingQueue<>();
     //m_dataProcessor = new DataProcessor();
     //m_dataOscSenderMap = new HashMap<>();
-    m_dataLslSenderList = new ArrayList<>();
     // Create listeners and pass reference to activity to them
     WeakReference<Activity> weakActivity = new WeakReference<Activity>(this);
     connectionListener = new ConnectionListener(weakActivity);
@@ -112,10 +111,11 @@ public class MainActivity extends Activity implements OnClickListener
     PowerManager m_pwrManager = (PowerManager)getSystemService(Context.POWER_SERVICE);
     m_wakeLock = m_pwrManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MyWakeLock");
 
-    m_ipAddressEditText = (EditText)findViewById(R.id.ip_address_edit_text);
-    m_sendLocationsText = (TextView)findViewById(R.id.send_locations);
-    m_portEditText = (EditText)findViewById(R.id.port_edit_text);
-    m_ipAddressEditText.addTextChangedListener(new TextWatcher()
+    m_sendLocationsLabel = (TextView)findViewById(R.id.send_locations);
+    m_ipAddressEditTF = (EditText)findViewById(R.id.ip_address_edit_text);
+    m_initChunkTF = (EditText)findViewById(R.id.chunk_edit_size);
+    m_portEditTF = (EditText)findViewById(R.id.port_edit_text);
+    m_ipAddressEditTF.addTextChangedListener(new TextWatcher()
     {
       @Override
       public void onTextChanged(CharSequence s, int start, int before, int count)
@@ -195,15 +195,13 @@ public class MainActivity extends Activity implements OnClickListener
     //  iter.remove();
     //}
 
-    for (Iterator<DataLslSender> iter = m_dataLslSenderList.iterator(); iter.hasNext(); )
+    if (m_dataLslSender != null)
     {
-      DataLslSender sender = iter.next();
-      sender.setSenderRunning(false);
-      iter.remove();
+      m_dataLslSender.setSenderRunning(false);
     }
 
     //m_dataProcessor.setRunning(false);
-    m_sendLocationsText.setText("");
+    m_sendLocationsLabel.setText("");
   }
 
   @Override
@@ -329,6 +327,12 @@ public class MainActivity extends Activity implements OnClickListener
       if (muse != null)
       {
         muse.enableDataTransmission(dataTransmission);
+        m_dataLslSender.setChunkSize(Integer.parseInt(m_initChunkTF.getText().toString()));
+        m_dataLslSender.setSenderRunning(dataTransmission);
+        if (dataTransmission)
+        {
+          new Thread(m_dataLslSender).start();
+        }
       }
     }
     else if (v.getId() == R.id.send_data)
@@ -339,10 +343,8 @@ public class MainActivity extends Activity implements OnClickListener
       //m_dataOscSenderMap.put(ipAddress, dataOscSender);
       //new Thread(dataOscSender).start();
       Log.i("Muse Headband", "Starting DataLslSender...");
-      DataLslSender dataLslSender = new DataLslSender();
-      m_dataLslSenderList.add(dataLslSender);
-      new Thread(dataLslSender).start();
-
+      m_dataLslSender = new DataLslSender();
+      new Thread(m_dataLslSender).start();
       //if (!m_dataProcessor.isRunning())
       //{
       //  m_dataProcessor.setRunning(true);
@@ -385,7 +387,7 @@ public class MainActivity extends Activity implements OnClickListener
     //muse.registerDataListener(dataListener, MuseDataPacketType.GAMMA_SCORE);
     //muse.registerDataListener(dataListener, MuseDataPacketType.MELLOW);
     //muse.registerDataListener(dataListener, MuseDataPacketType.CONCENTRATION);
-    muse.setPreset(MusePreset.PRESET_14);
+    muse.setPreset(MusePreset.PRESET_12);
     muse.enableDataTransmission(dataTransmission);
   }
 
@@ -826,6 +828,7 @@ public class MainActivity extends Activity implements OnClickListener
   class DataLslSender implements Runnable
   {
     private int m_dataChunkCounter = 0;
+    private int m_chunkSize = 64;
     private vectorf m_floatVector;
     private vectori m_intVector;
     private volatile boolean m_senderRunning = true;
@@ -838,6 +841,12 @@ public class MainActivity extends Activity implements OnClickListener
       stream_info markerInfo = new stream_info("MuseEEGMarkers", "Markers", 4, 10, channel_format_t.cf_int32, "myuniquesourceid23443");
       m_outlet = new stream_outlet(dataInfo);
       m_markerOutlet = new stream_outlet(markerInfo);
+      m_chunkSize = Integer.parseInt(m_initChunkTF.getText().toString());
+    }
+
+    public void setChunkSize(int chunkSize)
+    {
+      m_chunkSize = chunkSize;
     }
 
     @Override
@@ -859,7 +868,7 @@ public class MainActivity extends Activity implements OnClickListener
                 }
                 m_dataChunkCounter++;
 
-                if (m_dataChunkCounter == BLOCK_SENT_SIZE)
+                if (m_dataChunkCounter == m_chunkSize)
                 {
                   m_outlet.push_chunk_multiplexed(m_floatVector);
                   m_dataChunkCounter = 0;
