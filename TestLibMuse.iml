@@ -40,7 +40,7 @@
         <SOURCES />
       </library>
     </orderEntry>
-    <orderEntry type="module" module-name="javaosc-core" />
-    <orderEntry type="library" scope="TEST" name="jna-4.0.0" level="project" />
+    <orderEntry type="module" module-name="javaosc-core" scope="TEST" />
+    <orderEntry type="library" scope="TEST" name="jna-4.2.1" level="application" />
   </component>
 </module>

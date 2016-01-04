@@ -185,7 +185,7 @@
         android:inputType="numberDecimal"
         android:text="@string/init_port"/>
     <Button
-        android:id="@+id/send_osc"
+        android:id="@+id/send_data"
         android:layout_width="0dp"
         android:layout_weight="0.15"
         android:layout_height="wrap_content"
