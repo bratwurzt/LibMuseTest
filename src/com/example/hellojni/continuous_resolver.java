@@ -6,7 +6,7 @@
  * the SWIG interface file instead.
  * ----------------------------------------------------------------------------- */
 
-package com.interaxon.lsl;
+package com.example.hellojni;
 
 public class continuous_resolver
 {

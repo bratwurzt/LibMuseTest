@@ -30,11 +30,11 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Spinner;
 import android.widget.TextView;
-import com.interaxon.lsl.channel_format_t;
-import com.interaxon.lsl.stream_info;
-import com.interaxon.lsl.stream_outlet;
-import com.interaxon.lsl.vectorf;
-import com.interaxon.lsl.vectori;
+import com.example.hellojni.channel_format_t;
+import com.example.hellojni.stream_info;
+import com.example.hellojni.stream_outlet;
+import com.example.hellojni.vectorf;
+import com.example.hellojni.vectori;
 
 /**
  * In this simple example MainActivity implements 2 MuseHeadband listeners and updates UI when data from Muse is received. Similarly you can implement listers for
@@ -338,6 +338,7 @@ public class MainActivity extends Activity implements OnClickListener
       //DataOscSender dataOscSender = new DataOscSender(ipAddress, port);
       //m_dataOscSenderMap.put(ipAddress, dataOscSender);
       //new Thread(dataOscSender).start();
+      Log.i("Muse Headband", "Starting DataLslSender...");
       DataLslSender dataLslSender = new DataLslSender();
       m_dataLslSenderList.add(dataLslSender);
       new Thread(dataLslSender).start();

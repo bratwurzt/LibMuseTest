@@ -6,23 +6,23 @@
  * the SWIG interface file instead.
  * ----------------------------------------------------------------------------- */
 
-package com.interaxon.lsl;
+package com.example.hellojni;
 
-public class SWIGTYPE_p_short
+public class SWIGTYPE_p_float
 {
   private transient long swigCPtr;
 
-  protected SWIGTYPE_p_short(long cPtr, @SuppressWarnings("unused") boolean futureUse)
+  protected SWIGTYPE_p_float(long cPtr, @SuppressWarnings("unused") boolean futureUse)
   {
     swigCPtr = cPtr;
   }
 
-  protected SWIGTYPE_p_short()
+  protected SWIGTYPE_p_float()
   {
     swigCPtr = 0;
   }
 
-  protected static long getCPtr(SWIGTYPE_p_short obj)
+  protected static long getCPtr(SWIGTYPE_p_float obj)
   {
     return (obj == null) ? 0 : obj.swigCPtr;
   }

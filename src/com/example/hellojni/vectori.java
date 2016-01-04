@@ -6,20 +6,20 @@
  * the SWIG interface file instead.
  * ----------------------------------------------------------------------------- */
 
-package com.interaxon.lsl;
+package com.example.hellojni;
 
-public class vectorl
+public class vectori
 {
   private transient long swigCPtr;
   protected transient boolean swigCMemOwn;
 
-  protected vectorl(long cPtr, boolean cMemoryOwn)
+  protected vectori(long cPtr, boolean cMemoryOwn)
   {
     swigCMemOwn = cMemoryOwn;
     swigCPtr = cPtr;
   }
 
-  protected static long getCPtr(vectorl obj)
+  protected static long getCPtr(vectori obj)
   {
     return (obj == null) ? 0 : obj.swigCPtr;
   }
@@ -36,59 +36,59 @@ public class vectorl
       if (swigCMemOwn)
       {
         swigCMemOwn = false;
-        lslAndroidJNI.delete_vectorl(swigCPtr);
+        lslAndroidJNI.delete_vectori(swigCPtr);
       }
       swigCPtr = 0;
     }
   }
 
-  public vectorl()
+  public vectori()
   {
-    this(lslAndroidJNI.new_vectorl__SWIG_0(), true);
+    this(lslAndroidJNI.new_vectori__SWIG_0(), true);
   }
 
-  public vectorl(long n)
+  public vectori(long n)
   {
-    this(lslAndroidJNI.new_vectorl__SWIG_1(n), true);
+    this(lslAndroidJNI.new_vectori__SWIG_1(n), true);
   }
 
   public long size()
   {
-    return lslAndroidJNI.vectorl_size(swigCPtr, this);
+    return lslAndroidJNI.vectori_size(swigCPtr, this);
   }
 
   public long capacity()
   {
-    return lslAndroidJNI.vectorl_capacity(swigCPtr, this);
+    return lslAndroidJNI.vectori_capacity(swigCPtr, this);
   }
 
   public void reserve(long n)
   {
-    lslAndroidJNI.vectorl_reserve(swigCPtr, this, n);
+    lslAndroidJNI.vectori_reserve(swigCPtr, this, n);
   }
 
   public boolean isEmpty()
   {
-    return lslAndroidJNI.vectorl_isEmpty(swigCPtr, this);
+    return lslAndroidJNI.vectori_isEmpty(swigCPtr, this);
   }
 
   public void clear()
   {
-    lslAndroidJNI.vectorl_clear(swigCPtr, this);
+    lslAndroidJNI.vectori_clear(swigCPtr, this);
   }
 
   public void add(int x)
   {
-    lslAndroidJNI.vectorl_add(swigCPtr, this, x);
+    lslAndroidJNI.vectori_add(swigCPtr, this, x);
   }
 
   public int get(int i)
   {
-    return lslAndroidJNI.vectorl_get(swigCPtr, this, i);
+    return lslAndroidJNI.vectori_get(swigCPtr, this, i);
   }
 
   public void set(int i, int val)
   {
-    lslAndroidJNI.vectorl_set(swigCPtr, this, i, val);
+    lslAndroidJNI.vectori_set(swigCPtr, this, i, val);
   }
 }
